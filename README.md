@@ -62,3 +62,4 @@ Die Weboberflaechen unterstuetzen die manuellen Schritte fuer TC-01 bis TC-04, T
 ## Offene Hardwarepruefungen
 
 Die Firmwares und die PlatformIO-Builds sind fuer die zwei genannten Pico-W-Environments vorgesehen. In dieser Umgebung kann kein WLAN- oder Servotest an realer Hardware durchgefuehrt werden. Vor der Vorfuehrung bitte WLAN-Zugang, Erreichbarkeit beider Webseiten, Servo-Winkel, Stromversorgung sowie die Fail-safe-Faelle TC-14 und TC-18 am Aufbau pruefen.
+
