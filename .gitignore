@@ -5,4 +5,7 @@ include/parkhaus_secrets.h
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+tmp/
+build/
+__pycache__/
 
