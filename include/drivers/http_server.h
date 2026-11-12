@@ -4,7 +4,7 @@
 #include "parking/http_parser.h"
 
 namespace hardware {
-struct Response { int status = 200; String body; };
+struct Response { int status = 200; String body; String contentType = "text/html; charset=utf-8"; };
 using Handler = Response (*)(const parking::HttpRequest&);
 // Bounded reads/writes. No readStringUntil(), connection wait, DNS or delay loop.
 class HttpServer {
@@ -30,7 +30,7 @@ class HttpServer {
       if (request_.state == parking::HttpRequest::Bad) { r.status = 400; r.body = "Ungueltige oder zu grosse Anfrage."; }
       else r = handler_(request_);
       if (r.body.length() > 24000) { r.status = 500; r.body = "Antwort zu gross."; }
-      output_ = "HTTP/1.1 " + String(r.status) + " Response\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\nContent-Length: " + String(r.body.length()) + "\r\n\r\n" + r.body;
+      output_ = "HTTP/1.1 " + String(r.status) + " Response\r\nContent-Type: " + r.contentType + "\r\nCache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: " + String(r.body.length()) + "\r\n\r\n" + r.body;
       started_ = millis();
     }
     int room = client_.availableForWrite();

@@ -1,13 +1,18 @@
 # Vollständiger manueller TK-Durchlauf
 
+> Aktueller Aufbau: **Ein SG90** am Schranken-Board, GP8/Pin 11, übernimmt beide Richtungen. Jeder Pico stellt eine eigene Weboberfläche bereit. Der gemeinsame Servo öffnet jeweils für 5 Sekunden.
+
+
 Diese Checkliste ist **noch nicht ausgeführt**. Hosttests und Kompilierung bestätigen keine WLAN-Verbindung, Servo-Bewegung oder Bedienbarkeit am echten Aufbau.
 
 ## Vorbereitung und Rollen
 
 - [ ] Boardmodelle notiert, beide passenden Firmwares mit echten WLAN-Daten übertragen.
-- [ ] Pico 1 = Kasse; Pico 2 = beide SG90 an GP8/GP9, externe 5 V, gemeinsame Servomasse.
+- [ ] Board ohne Servo = Kasse/Web-UI; Board mit Servo = Schranke, einzelner SG90 an GP8, GP9 unbenutzt.
+- [ ] Schranken-Pico hat eingelötete Stiftleisten oder direkt angelötete Leitungen. Bei USB oben: Rot an VBUS oben rechts/Pin 40; Braun an GND links Reihe 8/Pin 8; Orange an GP8 links Reihe 11/Pin 11.
+- [ ] Auf der Schranken-Seite „Servotest ohne Parkvorgang“ mit Admin-PIN 4500 ausgelöst; der SG90 bewegt sich auf 90° und nach 5 Sekunden auf 0°. Wenn nicht, elektrische Kontakte und Versorgung vor den TK-Fällen prüfen.
 - [ ] Leichte Modellarme, keine Personen/Fahrzeuge im Bewegungsbereich, Schließen/Endlagen ohne Anschlag geprüft.
-- [ ] Beide Picos/Browser im selben WLAN; individuelle IP-Adressen notiert; Kassenlink auf Pico 2 zeigt richtigen Pico.
+- [ ] Beide Picos und Browser im selben WLAN; beide Webseiten unter ihren eigenen IPs öffnen; Schranken-Seite meldet „Kasse: verbunden“.
 - [ ] Serieller Monitor 115200 Baud für RPC-Logs verfügbar; PIN bekannt (Demo 4500).
 - [ ] Testmodus aktiv; Standardtarif 30 min / 50 Rp. / Tagesmaximum 1500 Rp. / Kulanz 15 min / Kapazität 10.
 - [ ] Grundzustand: beide ausschalten, Kasse zuerst, dann Schranken-Pico starten. Keine alten Datensätze.
@@ -22,7 +27,7 @@ Zwischen **unabhängigen** Fällen beide Picos neu starten; zusammenhängende F�
 
 | ID / Quelle | Vorbedingung und konkrete Schritte | Erwartetes Ergebnis |
 |---|---|---|
-| **TC-01**, TK 9–10 | Leerer Grundzustand. Auf Pico 2 unter Einfahrt `LU 123456` bestätigen. Kassenansicht aktualisieren. | Nur Einfahrtservo öffnet ca. 2,5 s, schließt wieder. Genau ein Fahrzeug, Einfahrtszeit seit Start, steigende Dauer, unbezahlt. |
+| **TC-01**, TK 9–10 | Leerer Grundzustand. Auf der gemeinsamen Seite Einfahrt `LU 123456` bestätigen. | Gemeinsamer Servo öffnet 5 s und schließt. Genau ein Fahrzeug, Einfahrtszeit seit Start, steigende Dauer, unbezahlt. |
 | **TC-02**, TK 10 | Einfahrtfeld leer absenden. Für Serverprüfung Browservalidierung umgehen: siehe Befehle unten. | Verständliche Validierung; keine neue Registrierung, keine Bewegung. |
 | **TC-03**, TK 10 | `XX!?%&` als Einfahrt eingeben. | Ungültiges Kennzeichen; beide Schranken geschlossen. |
 | **TC-04**, TK 10–11 | TC-01 ausgeführt und Schranke wieder zu. Dasselbe Kennzeichen nochmals eingeben, auch als `lu123456`. | Duplikatmeldung, kein zweiter Datensatz/Zeitenwechsel, keine zweite Öffnung. |
@@ -34,7 +39,7 @@ Zwischen **unabhängigen** Fällen beide Picos neu starten; zusammenhängende F�
 | **TC-10**, TK 12 | LU 999999 ist nicht eingefahren. Gebühr dafür anfordern; optional direkten `/pay`-POST unten senden. | „Kennzeichen nicht gefunden“, keine Gebühr/Zahlung/Neuregistrierung. |
 | **TC-11**, TK 13 | Neues unbezahltes Fahrzeug, Gebühr berechnen und „Zahlung abbrechen“. Auf Pico 2 Ausfahrt versuchen. | Abbruch bestätigt; unbezahlt, Ausfahrt bleibt zu. Browser-Zurück und altes Zahlungsformular erneut senden: Angebot ungültig. |
 | **TC-12**, TK 13 | Zwei Fahrzeuge einfahren. Eines mit Karte, das andere mit TWINT bezahlen. Erneut deren Gebührenansicht öffnen. | Beide simuliert bezahlt, richtige Methode/Zeiten getrennt sichtbar. Keine reale Abbuchung. |
-| **TC-13**, TK 13 | Fahrzeug bezahlt, Kulanz noch gültig. Auf Pico 2 Ausfahrt auslösen. | Nur Ausfahrtservo öffnet ca. 2,5 s und schließt. Kasse zeigt nach bestätigtem Depart keinen aktiven Datensatz mehr. Gleiches Kennzeichen kann neu einfahren und ist dann wieder unbezahlt. |
+| **TC-13**, TK 13 | Fahrzeug bezahlt, Kulanz noch gültig. Auf der gemeinsamen Seite Ausfahrt auslösen. | Gemeinsamer Servo öffnet 5 s und schließt. Kasse zeigt nach bestätigtem Depart keinen aktiven Datensatz mehr. Gleiches Kennzeichen kann neu einfahren und ist dann wieder unbezahlt. |
 | **TC-14**, TK 13–14, **kritisch** | Neues Fahrzeug einfahren, nicht bezahlen, Ausfahrt anfordern. Auch unbekanntes Kennzeichen probieren. | Keine Ausfahrtbewegung. Bei registriertem Fahrzeug „Unbezahlt“, bei unbekanntem „nicht gefunden“. Jede falsche Öffnung = kritischer Fehler, Abnahme stoppen. |
 | **TC-15**, TK 14 | Neues Fahrzeug bezahlen, innerhalb von 15 min ausfahren. Bei Bedarf nach Zahlung Testzeit +14 min (zügig weiterarbeiten). | Öffnung ohne weitere Zahlung. Frist exakt einschließlich Ende im Hosttest geprüft. |
 | **TC-16**, TK 14 | Neues Fahrzeug bei <1 min für CHF 0.50 bezahlen. Testzeit **+31 min**, Ausfahrt versuchen. An Kasse neu berechnen, Nachzahlung bestätigen, erneut ausfahren. | Zunächst „Kulanzzeit abgelaufen“ und geschlossen; bei Gesamtdauer 31–60 min Nachzahlung CHF 0.50. Nach Bestätigung neue 15-min-Frist und Ausfahrt möglich. Zusatztest +16 min bei Gesamtdauer <30 min: Rest 0, aber Bestätigung trotzdem erforderlich. |
@@ -64,9 +69,9 @@ Werte sind Beispiele; die Firmware gibt die tatsächlichen IPs aus. Alle drei Re
 - [ ] **Start:** Ohne USB-Monitor autonom gestartet; beide Servos unmittelbar in Schließposition. Keine Öffnung durch Boot/Discovery/Heartbeat.
 - [ ] **Strom:** Beide Servoanschlüsse stimmen; kein Brownout/Neustart bei Bewegung; gemeinsame Masse geprüft; kein GPIO mit 5 V verbunden.
 - [ ] **Winkel:** Öffnungs-/Schließlage sicher erreicht, kein Anschlag; Pulsgrenzen/Montage gegebenenfalls angepasst.
-- [ ] **WLAN-Rückkehr:** AP kurz aus/an; Webseiten und Protokoll kehren zurück, ohne manuell zu resetten; Gate bleibt geschlossen bei abgewiesener Aktion.
+- [ ] **WLAN-Rückkehr:** AP kurz aus/an; beide Webseiten und das Protokoll kehren zurück, ohne manuell zu resetten; Gate bleibt geschlossen bei abgewiesener Aktion.
 - [ ] **Bereits offenes Gate:** Nach rechtmäßiger Freigabe WLAN kurz trennen; Gate schließt nach normaler Haltezeit weiter. Abschluss wird nach Rückkehr quittiert.
-- [ ] **Langsamer Browser:** HTTP-Verbindung nur teilweise senden/offen lassen; bereits geöffneter Servo muss trotzdem nach ca. 2,5 s schließen. Reale Abweichung messen und protokollieren (Zielwert für Modell: <100 ms Zusatzverzögerung bei normalem LAN, keine gemessene Garantie).
+- [ ] **Langsamer Browser:** HTTP-Verbindung nur teilweise senden/offen lassen; bereits geöffneter Servo muss trotzdem nach 5 s schließen. Reale Abweichung messen und protokollieren.
 - [ ] **Doppelklick/Reload:** Keine zweite Zahlung, Fristverlängerung oder neue Öffnung aus alter Antwort. Neue Kennzeicheneinfahrt hat neue Besuchs-ID.
 - [ ] **Reboot Kasse:** Keine Freigabe mit altem Bezahlstatus; leeres Register und neue Sitzung erkennbar.
 - [ ] **Reboot Schranken während Ausfahrt:** Keine automatische erneute Öffnung; unklare Passage wird geprüft, beide neu starten für neuen Test.

@@ -23,14 +23,10 @@ static constexpr uint32_t PARKING_LINK_ID = 0x4502026;
 #endif
 static constexpr bool PARKING_TEST_MODE = true;
 
-// GP8 follows the PDF example. GP9 and angles were already used by this project.
-static constexpr uint8_t ENTRY_SERVO_PIN = 8;
-static constexpr uint8_t EXIT_SERVO_PIN = 9;
-static constexpr uint16_t SERVO_MIN_US = 540, SERVO_MAX_US = 2400;
-static constexpr uint8_t ENTRY_CLOSED_ANGLE = 0, ENTRY_OPEN_ANGLE = 90;
-static constexpr uint8_t EXIT_CLOSED_ANGLE = 0, EXIT_OPEN_ANGLE = 90;
-static constexpr uint32_t GATE_OPEN_MS = 2500;
-static_assert(ENTRY_SERVO_PIN != EXIT_SERVO_PIN, "Servos need different GPIOs");
+// Actual hardware: ONE shared entry/exit barrier on GP8 (PDF example).
+static constexpr uint8_t BARRIER_SERVO_PIN = 8;
+static constexpr uint8_t BARRIER_CLOSED_ANGLE = 0, BARRIER_OPEN_ANGLE = 90;
+static constexpr uint32_t GATE_OPEN_MS = 5000;
 
 // Demo-Tarif: CHF 0.50 je angefangene 30 Minuten, hoechstens CHF 15.00
 // je zusammenhaengendem 24-Stunden-Zeitraum. Pico 1 kann diese Werte
@@ -42,7 +38,6 @@ static constexpr uint32_t DEFAULT_DAILY_MAX_CENTS = 1500;
 static constexpr uint16_t DEFAULT_GRACE_MINUTES = 15;
 static constexpr uint8_t DEFAULT_PARKING_CAPACITY = 10;
 static_assert(DEFAULT_PARKING_CAPACITY >= 1 && DEFAULT_PARKING_CAPACITY <= 32, "Capacity must be 1..32");
-static_assert(ENTRY_CLOSED_ANGLE <= 180 && ENTRY_OPEN_ANGLE <= 180 && EXIT_CLOSED_ANGLE <= 180 && EXIT_OPEN_ANGLE <= 180, "Servo angles must be 0..180");
-static_assert(SERVO_MIN_US >= 200 && SERVO_MAX_US <= 3000 && SERVO_MIN_US < SERVO_MAX_US, "Invalid servo pulse range");
+static_assert(BARRIER_CLOSED_ANGLE <= 180 && BARRIER_OPEN_ANGLE <= 180, "Servo angles must be 0..180");
 static_assert(GATE_OPEN_MS > 0 && GATE_OPEN_MS < 60000, "Gate hold must be 1..59999 ms");
 

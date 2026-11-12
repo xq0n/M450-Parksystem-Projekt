@@ -11,6 +11,7 @@ parking::Clock clockSource;
 parking::Service* service = nullptr;
 hardware::Network network;
 hardware::Datagram link;
+IPAddress gateAddress;
 
 String home() {
   using namespace ui;
@@ -36,7 +37,9 @@ String home() {
     p += "<section><h2>Testmodus aktiv</h2><p>Kamera und Karte/TWINT werden simuliert. Die Servos werden echt bewegt.</p><details><summary>Testzeit vorsetzen (TC-06/07/15/16)</summary><p>Verschiebt die Uhr fuer alle Fahrzeuge, ohne die Schranken-Timer zu beschleunigen. Vorher offene Zahlungsangebote werden ungueltig.</p><form method='post' action='/advance'>";
     p += numeric("Zusaetzliche Minuten", "minutes", 1, 1, 43200) + pin() + "<button>Testzeit vorsetzen</button></form></details><p>Grundzustand: beide Picos ausschalten, Schranken freihalten, zuerst Kasse und danach Schranken-Pico neu starten.</p></section>";
   }
-  p += "<p><a href='/'>Ansicht aktualisieren</a> · Kasse: http://" + WiFi.localIP().toString() + "/</p>";
+  p += "<p><a href='/'>Ansicht aktualisieren</a> · Kasse: http://" + WiFi.localIP().toString() + "/";
+  if (gateAddress != IPAddress()) p += " · <a href='http://" + gateAddress.toString() + "/'>Schranken-Seite oeffnen</a>";
+  p += "</p>";
   return p + end();
 }
 
@@ -69,6 +72,12 @@ hardware::Response quote(const char* plate) {
 
 hardware::Response handle(const parking::HttpRequest& q) {
   clockSource.update(millis());
+  if (!strcmp(q.method, "GET") && !strcmp(q.path, "/api/config")) {
+    String body = String("{\"gate\":\"");
+    if (gateAddress != IPAddress()) body += "http://" + gateAddress.toString();
+    body += "\"}";
+    return {200, body, "application/json; charset=utf-8"};
+  }
   if (!strcmp(q.method, "GET") && !strcmp(q.path, "/")) return {200, home()};
   if (strcmp(q.method, "POST")) return message("Seite nicht gefunden.", 404);
   if (!strcmp(q.path, "/tariff")) {
@@ -130,6 +139,7 @@ void loop() {
     parking::Message q, a; IPAddress from;
     if (!link.receive(q, from)) break;
     if (service->handle(q, clockSource.now(), a)) {
+      if (q.op == parking::Op::Hello || q.op == parking::Op::Ping) gateAddress = from;
       link.send(a, from);
       if (q.op != parking::Op::Hello && q.op != parking::Op::Ping)
         Serial.printf("RPC seq=%lu op=%u plate=%s result=%u visit=%lu\n", (unsigned long)q.seq, unsigned(q.op), q.plate, unsigned(a.result), (unsigned long)a.visit);

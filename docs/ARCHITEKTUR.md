@@ -1,13 +1,18 @@
 # Architektur und Kommunikationsvertrag
 
+> Aktueller Aufbau: **Eine gemeinsame Schranke** mit SG90 am Schranken-Board, GP8/Pin 11, übernimmt Ein- und Ausfahrt; GP9 entfällt. Wie im TK S. 2 stellt jeder Pico eine eigene Weboberfläche bereit: Schranke unter `192.168.1.126`, Kasse unter `192.168.1.127`. Die Schranke bleibt 5 Sekunden offen. Aktuelle Verkabelung siehe README.
+
+Die gemeinsame Schranke öffnet nach gültiger Einfahrt oder bezahlter Ausfahrt direkt per Servobefehl und schließt nach 5000 ms. Sensoren sind nicht vorhanden oder erforderlich.
+
+
 ## Zwei Rollen, ein verbindlicher Datenbestand
 
 Pico 1 hält maximal 32 Parkvorgänge in einem festen Array. Die fachliche Kapazität ist separat 1–32 einstellbar. Alle Berechnungen, Einfahrts-/Zahlzeitpunkte, Angebote und Ausfahrtberechtigungen entstehen hier. Pico 2 hält nur den laufenden Kommunikationsvorgang, zwei Schranken-Timer und die Besuchsnummer einer gerade freigegebenen Ausfahrt. Ein PC dient als Browser/Programmiergerät, nicht als dritter Steuerrechner.
 
 ```mermaid
 flowchart LR
-  B[Browser] -->|HTTP Port 80| P1[Pico 1: Kasse]
-  B -->|HTTP Port 80| P2[Pico 2: Schranken]
+  B[Browser] -->|Kassen-Seite, HTTP Port 80| P1[Pico 1: Kasse]
+  B -->|Schranken-Seite, HTTP Port 80| P2[Pico 2: Schranken]
   P2 <-->|UDP Port 4210, Quittierung und CRC| P1
   P2 -->|GP8: PIO-Servosignal| E[Einfahrtservo]
   P2 -->|GP9: PIO-Servosignal| X[Ausfahrtservo]
@@ -21,7 +26,7 @@ flowchart LR
 - `parking/controller.h`: derselbe Schranken-Zustandsautomat in Hosttests und Firmware. Entscheidet über Öffnen, Fristablauf, Stornierung und Abschluss.
 - `drivers/runtime.h`: echte Arduino-Pico-WiFi/UDP-APIs, `beginNoBlock`, Discovery, Socket-Wiederaufbau.
 - `drivers/http_server.h` + `parking/http_parser.h`: höchstens ein bearbeiteter HTTP-Client, begrenzte Header-/Bodylänge, Arbeit pro Schleifendurchlauf begrenzt.
-- Beide `main.cpp`: Webseiten, Konfiguration und Verbindung der Module. Nur Pico 2 bindet `Servo.h` ein.
+- `src/pico1/main.cpp` stellt die Kassen-Seite bereit und verwaltet Kasse/Zahlung. `src/pico2/main.cpp` stellt die Schranken-Seite bereit und verarbeitet Ein-/Ausfahrt. `include/drivers/gate.h` kapselt den einen Servo und öffnet/schließt wie das bereitgestellte Beispiel `Gate.cpp`.
 
 Gebührenzeit = 64-Bit-Laufzeit von Pico 1. Jede Schleife erweitert `millis()` anhand unsigned Differenz, also korrekt über dessen 49,7-Tage-Überlauf hinweg, solange die Schleife regelmäßig läuft. Die administrative Testuhr addiert einen Offset. Es gibt keine Kalenderzeit und keine Gebührensynchronisation zwischen den Boards. Netzwerk-/Servo-Timer verwenden ungeänderte Echtzeit-Millis; die Testuhr beeinflusst sie nicht.
 
@@ -59,11 +64,11 @@ Result-Codes: `Ok=0`, `Invalid=1`, `Duplicate=2`, `Full=3`, `NotFound=4`, `Unpai
 
 ## Normaler Ablauf
 
-**Einfahrt:** Pico 2 validiert → Entry → Kasse prüft Duplikat/Kapazität und registriert Zeit/Besuch → rechtzeitige passende Ok-Antwort → Einfahrtservo öffnet → Echtzeit-Timer schließt nach 2500 ms. Während einer Bewegung oder ungeklärten Transaktion ist ein weiterer Bedienvorgang gesperrt.
+**Einfahrt:** Browser sendet das Kennzeichen auf der Schranken-Seite → Pico 2 validiert → Entry → Kasse prüft Duplikat/Kapazität und registriert Zeit/Besuch → rechtzeitige passende Ok-Antwort → gemeinsamer Servo öffnet direkt mit `Servo.write(90)` → Timer schließt nach 5000 ms mit `Servo.write(0)`. Während einer Bewegung oder ungeklärten Transaktion ist ein weiterer Bedienvorgang gesperrt.
 
 **Kasse:** Quote erzeugt eine einmalige Angebotsnummer und friert den Betrag für 120 s ein. Zahlmethodenauswahl allein ändert nichts. Pay akzeptiert nur das aktuelle unbenutzte Angebot und eine bekannte Methode. Cancel entwertet es. Tarif-/Testzeitänderung entwertet alle offenen Angebote. Datensätze anderer Fahrzeuge sind unabhängig.
 
-**Ausfahrt:** Authorize prüft bezahlt und Kulanz, setzt den Datensatz auf „Ausfahrt freigegeben“ und liefert dessen Besuchs-ID. Nur die rechtzeitige passende Antwort öffnet. Nach Schließen sendet Pico 2 Depart mit dieser ID. Pico 1 löscht genau diesen freigegebenen Datensatz und quittiert. Wiederholtes Depart erhält dieselbe gecachte Antwort. Unbezahlte oder abgelaufene Vorgänge bleiben unverändert gesperrt.
+**Ausfahrt:** Authorize prüft bezahlt und Kulanz, setzt den Datensatz auf „Ausfahrt freigegeben“ und liefert dessen Besuchs-ID. Nur die rechtzeitige passende Antwort öffnet denselben Servo für 5000 ms. Danach sendet Pico 2 Depart mit dieser ID. Pico 1 löscht genau diesen freigegebenen Datensatz und quittiert. Wiederholtes Depart erhält dieselbe gecachte Antwort. Unbezahlte oder abgelaufene Vorgänge bleiben unverändert gesperrt.
 
 ## Timeout und Wiederherstellung
 

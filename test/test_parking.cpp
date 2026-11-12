@@ -153,9 +153,9 @@ void integration() {
   group("TC-01/09/13/17/19: both firmwares' actual domain/controller over encoded frames");
   Rig r; r.enter(); r.enter("LU2"); r.pay(); r.pay("LU2");
   CHECK(r.controller.action(Op::Authorize, "LU1", r.now) == Result::Ok); r.pump(30);
-  CHECK(r.controller.exitGate.isOpen()); CHECK(r.store.count() == 2);
+  CHECK(r.controller.exitGate.isOpen()); CHECK(r.controller.barrierOpen()); CHECK(r.store.count() == 2);
   CHECK(r.controller.action(Op::Entry, "LU3", r.now) == Result::Busy);
-  r.pump(2700); CHECK(!r.controller.exitGate.isOpen()); CHECK(r.store.count() == 1);
+  r.pump(2700); CHECK(!r.controller.exitGate.isOpen()); CHECK(!r.controller.barrierOpen()); CHECK(r.store.count() == 1);
   CHECK(r.controller.action(Op::Authorize, "LU2", r.now) == Result::Ok); r.pump(2800); CHECK(r.store.count() == 0);
 }
 void denied() {
@@ -171,7 +171,7 @@ void losses() {
   group("TC-18: offline cashier, lost entry ACK, late grant rollback, reconnect");
   Rig r; r.dropReplies = true;
   CHECK(r.controller.action(Op::Entry, "LU1", r.now) == Result::Ok); r.pump(2100);
-  CHECK(r.store.count() == 1); CHECK(!r.controller.entryGate.isOpen()); CHECK(r.controller.notice == Notice::Timeout);
+  CHECK(r.store.count() == 1); CHECK(!r.controller.entryGate.isOpen()); CHECK(!r.controller.barrierOpen()); CHECK(r.controller.notice == Notice::Timeout);
   CHECK(r.controller.reconciling());
   CHECK(r.controller.action(Op::Entry, "LU2", r.now) == Result::Busy);
   r.dropReplies = false; r.pump(1200); CHECK(r.store.count() == 0); CHECK(!r.controller.entryGate.isOpen()); CHECK(!r.controller.busy());

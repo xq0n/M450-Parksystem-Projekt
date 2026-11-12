@@ -1,0 +1,8 @@
+{
+  "name": "parkhaus-single-ui",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "vite build" },
+  "dependencies": {},
+  "devDependencies": { "vite": "^8.3.8" }
+}

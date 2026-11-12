@@ -1,10 +1,13 @@
 # Abschlussbericht
 
-Stand 12.11.2026. Implementierung direkt im Repository; keine Commits, Uploads auf Hardware oder Veröffentlichungen durchgeführt.
+> Aktueller Aufbau: **Eine gemeinsame Schranke** am Schranken-Pico, GP8/Pin 11, übernimmt beide Richtungen; GP9 entfällt. Nach dem physischen Boardtausch stellt die Kasse ihre eigene Webseite auf `192.168.1.127` bereit, die Schranke ihre Webseite auf `192.168.1.126`. Der Servo öffnet nach Freigabe fünf Sekunden.
+
+
+Stand 12.11.2026. Implementierung direkt im Repository. Beide RP2040-Firmwares wurden auf die angeschlossenen Boards übertragen und die Kassen-Webseite sowie die Pico-Erkennung im lokalen WLAN per HTTP geprüft. Keine Commits oder Veröffentlichungen durchgeführt.
 
 ## Ergebnis
 
-Zwei eigenständig baubare Arduino/C++-Programme, zusätzlich je eine Boardvariante für RP2040 Pico W und RP2350 Pico 2 W. Pico 1 übernimmt Kasse/Register/Gebühren/Zahlung/Kulanz/Kapazität; Pico 2 übernimmt Webeingabe und beide echten PIO-Servos. Das WLAN-Protokoll verwendet CRC32, Boot-Sitzungen, Sequenzen, Besuchsnummern, Quittierungen, Wiederholungen, Heartbeats, Timeout und Storno verspäteter Freigaben.
+Zwei eigenständig baubare Arduino/C++-Programme, zusätzlich je eine Boardvariante für RP2040 Pico W und RP2350 Pico 2 W. Pico 1 übernimmt Kasse/Register/Gebühren/Zahlung/Kulanz/Kapazität und liefert die Kassen-Webseite; Pico 2 liefert die Schranken-Webseite und steuert den einen Servo über `Gate::open()` und `Gate::update()` nach dem bereitgestellten Beispiel. Das WLAN-Protokoll verwendet CRC32, Boot-Sitzungen, Sequenzen, Besuchsnummern, Quittierungen, Wiederholungen, Heartbeats, Timeout und Storno verspäteter Freigaben.
 
 Implementiert: TC-01–20 einschließlich vormals fehlender Kapazitätsprüfung und Kulanz/Nachzahlung; expliziter Zahlungsabbruch, Karte/TWINT, Tarifänderung ohne Codeänderung, begrenzter HTTP-Parser, Wiederverbindung, Zeitüberlaufbehandlung, Testzeitsprung und nichtblockierende Schranken-Zustandslogik. Kamera und Geldfluss sind TK-gemäß simuliert; Servos werden über Hardwaretreiber angesteuert.
 

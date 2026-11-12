@@ -1,8 +1,8 @@
 #include <Arduino.h>
-#include <Servo.h>
 #include "parking/controller.h"
 #include "drivers/runtime.h"
 #include "drivers/http_server.h"
+#include "drivers/gate.h"
 #include "web/ui.h"
 
 namespace {
@@ -10,8 +10,8 @@ hardware::Network network;
 hardware::Datagram link;
 parking::Controller* controller = nullptr;
 IPAddress cashAddress;
-Servo entryServo, exitServo;
-bool servosReady = false, entryWasOpen = false, exitWasOpen = false;
+hardware::Gate barrierGate;
+bool servosReady = false, barrierWasOpen = false;
 
 String statusText() {
   using parking::Notice;
@@ -34,19 +34,43 @@ String home(const String& error = "", bool refresh = false) {
   p += "<section><h2>Status</h2>";
   if (error.length()) p += ui::notice(error, true);
   p += ui::notice(statusText(), controller->notice == parking::Notice::Denied || controller->notice == parking::Notice::Timeout || controller->notice == parking::Notice::Fault);
-  p += "<p>Einfahrt: <strong>" + String(controller->entryGate.isOpen() ? "offen" : "geschlossen") + "</strong> · Ausfahrt: <strong>" + String(controller->exitGate.isOpen() ? "offen" : "geschlossen") + "</strong></p><p>Kasse: ";
+  p += "<p>Gemeinsame Schranke: <strong>" + String(barrierGate.isOpen() ? "offen" : "geschlossen") + "</strong></p><p>Ein Servo fuer Einfahrt und Ausfahrt.</p><p>Kasse: ";
   p += controller->ready() ? "verbunden" : "nicht bereit";
   if (controller->serverBoot()) p += " · <a href='http://" + cashAddress.toString() + "/'>Kasse oeffnen</a>";
   p += "</p><p><a href='/'>Status aktualisieren</a></p></section>";
   if (!servosReady) p += ui::notice("Servo-Treiber nicht bereit. Es wird keine Freigabe angefordert.", true);
   p += "<section><h2>1. Einfahren</h2><p>Die manuelle Kennzeicheneingabe ersetzt die Kamera.</p><form method='post' action='/entry'><label>Kennzeichen <input name='plate' maxlength='16' placeholder='LU 123456' required></label><button>Einfahrt bestaetigen</button></form></section>";
-  p += "<section><h2>3. Ausfahren</h2><p>Zuerst an Pico 1 bezahlen. Die Kasse muss jede Ausfahrt bestaetigen.</p><form method='post' action='/exit'><label>Kennzeichen <input name='plate' maxlength='16' placeholder='LU 123456' required></label><button>Ausfahrt pruefen</button></form></section><p>Die Modellschranken schliessen nach " + String(GATE_OPEN_MS) + " ms automatisch. Bewegungsbereich freihalten.</p>";
+  p += "<section><h2>3. Ausfahren</h2><p>Zuerst an Pico 1 bezahlen. Die Kasse muss jede Ausfahrt bestaetigen.</p><form method='post' action='/exit'><label>Kennzeichen <input name='plate' maxlength='16' placeholder='LU 123456' required></label><button>Ausfahrt pruefen</button></form></section><p>Die gemeinsame Schranke schliesst nach " + String(GATE_OPEN_MS) + " ms automatisch. Bewegungsbereich freihalten.</p>";
+  if (PARKING_TEST_MODE) p += "<section><details><summary>Servotest ohne Parkvorgang</summary><p>Bewegungsbereich freihalten. Dieser Test steuert nur den Servo an GP8 an; er registriert keine Ein- oder Ausfahrt.</p><form method='post' action='/servo-test'>" + ui::pin() + "<button>Servo 5 Sekunden testen</button></form></details></section>";
   return p + ui::end();
 }
 hardware::Response handle(const parking::HttpRequest& q) {
+  if (!strcmp(q.method, "GET") && !strcmp(q.path, "/api/status")) {
+    const String message = statusText();
+    String escaped;
+    for (size_t i = 0; i < message.length(); ++i) {
+      const char c = message[i];
+      if (c == '"' || c == '\\') escaped += '\\';
+      if (uint8_t(c) >= 0x20) escaped += c;
+    }
+    const String body = String("{\"busy\":") + (controller->busy() || barrierGate.isOpen() ? "true" : "false") +
+      ",\"open\":" + (barrierGate.isOpen() ? "true" : "false") +
+      ",\"ready\":" + (controller->ready() ? "true" : "false") +
+      ",\"message\":\"" + escaped + "\"}";
+    return {200, body, "application/json; charset=utf-8"};
+  }
   if (!strcmp(q.method, "GET") && !strcmp(q.path, "/")) return {200, home("", controller->busy())};
+  if (!strcmp(q.method, "POST") && !strcmp(q.path, "/servo-test") && PARKING_TEST_MODE) {
+    if (!ui::admin(q)) return {403, home("Admin-PIN ungueltig.")};
+    if (!servosReady) return {503, home("Servo-Treiber nicht bereit.")};
+    if (controller->busy() || barrierGate.isOpen()) return {409, home("Vorgang oder Schranke noch aktiv. Bitte warten.")};
+    barrierGate.open();
+    Serial.printf("Servotest: GP%u auf %u Grad fuer %lu ms\n", BARRIER_SERVO_PIN, BARRIER_OPEN_ANGLE, (unsigned long)GATE_OPEN_MS);
+    return {200, home("Servotest laeuft: GP8 offen. Nach 5 Sekunden wieder geschlossen.", true)};
+  }
   if (strcmp(q.method, "POST") || (strcmp(q.path, "/entry") && strcmp(q.path, "/exit"))) return {404, home("Seite nicht gefunden.")};
   if (!servosReady) return {503, home("Servo-Treiber nicht bereit.")};
+  if (barrierGate.isOpen()) return {409, home("Schranke noch aktiv. Bitte warten.")};
   char plate[parking::PlateSize];
   if (!ui::plate(q, plate)) return {400, home(ui::result(parking::Result::Invalid))};
   const auto op = !strcmp(q.path, "/entry") ? parking::Op::Entry : parking::Op::Authorize;
@@ -60,20 +84,22 @@ void serviceController() {
     // After timeout rediscover even an outstanding transaction (DHCP address may change).
     link.send(q, q.op == parking::Op::Hello || controller->reconciling() ? hardware::Datagram::discovery() : cashAddress);
   }
-  const bool entry = controller->entryGate.isOpen(), exit = controller->exitGate.isOpen();
-  if (entry != entryWasOpen) { entryServo.write(entry ? ENTRY_OPEN_ANGLE : ENTRY_CLOSED_ANGLE); entryWasOpen = entry; }
-  if (exit != exitWasOpen) { exitServo.write(exit ? EXIT_OPEN_ANGLE : EXIT_CLOSED_ANGLE); exitWasOpen = exit; }
+  const bool open = controller->barrierOpen();
+  if (open != barrierWasOpen) {
+    if (open) barrierGate.open(); else barrierGate.close();
+    barrierWasOpen = open;
+    Serial.printf("Gemeinsame Schranke GP%u: %s\n", BARRIER_SERVO_PIN, open ? "offen" : "geschlossen");
+  }
+  barrierGate.update();
 }
 } // namespace
 
 void setup() {
   Serial.begin(115200);
-  entryServo.attach(ENTRY_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US, ENTRY_CLOSED_ANGLE);
-  exitServo.attach(EXIT_SERVO_PIN, SERVO_MIN_US, SERVO_MAX_US, EXIT_CLOSED_ANGLE);
-  entryServo.write(ENTRY_CLOSED_ANGLE); exitServo.write(EXIT_CLOSED_ANGLE);
-  servosReady = entryServo.attached() && exitServo.attached();
+  barrierGate.begin();
+  servosReady = barrierGate.attached();
   static parking::Controller gateController(hardware::bootId(), PARKING_LINK_ID, GATE_OPEN_MS); controller = &gateController;
-  Serial.println("Pico 2: Schranken. Beide Schranken geschlossen.");
+  Serial.println("Pico 2: Eine gemeinsame Schranke an GP8, geschlossen.");
   network.begin("parkhaus-schranke");
 }
 void loop() {

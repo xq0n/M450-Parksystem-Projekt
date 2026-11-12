@@ -1,5 +1,8 @@
 # Verifikation vom 12.11.2026
 
+> Aktueller Aufbau: ein gemeinsamer SG90 am Schranken-Pico, GP8/Pin 11; fünf Sekunden Öffnungszeit. Beide Picos stellen wie im TK S. 2 eine eigene Webseite bereit: Kasse `192.168.1.127`, Schranke `192.168.1.126`.
+
+
 ## Tatsächlich ausgeführte Tests ohne Hardware
 
 `python tools/test_host.py` wurde unter Windows mit GCC 15.2.0 (MSYS2 UCRT64), C++17, `-Wall -Wextra -Werror -pedantic` ausgeführt.
@@ -55,10 +58,22 @@ Umgebungsbesonderheiten: Der erste Online-Build scheiterte an DNS in der eingesc
 - Boot-/Sequenz-/Besuchszuordnung und DHCP-Wiederentdeckung bei ausstehender Transaktion im Code geprüft; tatsächlicher DHCP-/UDP-Treiber noch auf Hardware zu testen.
 - Quell- und Dokumentationsprüfung: `git diff --check`, Python-Syntaxprüfung der Werkzeuge; lokale Dokumentationslinks und TC-01–20-Zuordnung geprüft.
 
-## Nicht ausgeführt / Hardware erforderlich
+## Auf den angeschlossenen Picos geprüft
 
-Der Nutzer bestätigte WLAN-fähige Boards, meldete aber keine angeschlossene Hardware. Deshalb wurden **keine Picos geflasht**, keine Servobewegung, keine Versorgung, keine echte WLAN-Störung und keine Browseroberfläche auf einem Pico getestet.
+- Die RP2040 Kassen-Firmware wurde als `firmware.uf2` auf COM6 (USB-ID `E663A837CB54A92D`) übertragen. Die Schranken-Firmware wurde als eigene `firmware.uf2` auf COM5 (USB-ID `E663AC91D337542C`) übertragen. Beide Webseiten sind in der jeweiligen Firmware enthalten.
+- Beide Boards starteten zurück als serielle USB-Geräte. HTTP GET an beiden IP-Adressen lieferte HTTP 200. `/api/config` der Kasse meldete `http://192.168.1.126` als Schranken-Pico.
+- Aktueller Stand: Beide Webseiten sind direkt in der jeweiligen Firmware enthalten. Live-HTTP-GET auf `192.168.1.127/` ergab den Titel „Pico 1 · Parkhaus-Kasse“; `192.168.1.126/` ergab „Pico 2 · Einfahrt und Ausfahrt“. Beide antworteten mit HTTP 200; die Schranken-Seite meldete die Kasse als verbunden.
+- Ein temporärer Einfahrt-/Zahlungs-/Ausfahrtablauf über die HTTP-Endpunkte lieferte Einfahrt 202, Zahlung 200 und Ausfahrt 202. Eine anschließende Gebührenanfrage für das Kennzeichen meldete „nicht gefunden“, damit blieb kein Testvorgang im Kassenregister.
+- Die Servo-Steuerzyklen wurden per HTTP ausgelöst, die physische Bewegung und Endlagen aber nicht visuell beobachtet. Ein kompletter manueller Durchlauf aller TK-Fälle steht noch aus.
 
-Offen bleiben: alle manuellen TC-01–20 als Systemtest, genaue Boardidentifikation, WLAN-Zugang/Client-Isolation, Broadcast oder feste IP, Servo-Modell/Pulse/Winkel/Strombedarf, reale Schließlatenz unter Browser-/Netzwerkbetrieb, Verhalten bei echten Spannungseinbrüchen sowie Usability TC-20. Verfahren: `HARDWARETESTS.md`; unvoreingenommene Protokollvorlage: `TESTPROTOKOLL.md`.
+Offen bleiben: manuelle TC-01–20 als Systemtest, genaue Boardgeneration, physische Servo-Bewegung/Endlagen/Strombedarf, Browser-Usability TC-20, WLAN-Ausfall/Wiederkehr und Verhalten bei Spannungseinbrüchen. Verfahren: `HARDWARETESTS.md`; Protokollvorlage: `TESTPROTOKOLL.md`.
 
 Automatisierte Tests und erfolgreiche Cross-Compilation begründen den Softwarestand. Sie begründen keine Behauptung, dass das vollständige TK am echten Aufbau bereits bestanden wurde.
+
+## Nachtrag: gemeinsame Schranke tatsächlich aufgespielt
+
+Am 12.11.2026 auf Nutzerangabe auf einen SG90 an GP8 des Schranken-Picos umgestellt. Nach dem später gewünschten physischen Rollentausch liegen die Programme nun auf den Boards ohne Servo (Kasse COM6) und mit Servo (Schranke COM5). Aktuelle WLAN-/HTTP-Prüfung siehe Abschnitt „Auf den angeschlossenen Picos geprüft“.
+
+Live über WLAN geprüft: neue Einfahrt, simulierte Kartenzahlung, Ausfahrt und Datensatzabschluss. Für beide Richtungen meldeten Webseite und serielle Ausgabe `Gemeinsame Schranke GP8: offen` und danach `geschlossen`. Beide Öffnungen verwenden denselben Servo-Ausgang. Der Testdatensatz wurde durch die Ausfahrt entfernt. Tatsächliche mechanische Bewegung muss der Nutzer vor Ort bestätigen; die Softwareausgaben messen keine Servoposition.
+
+Nach dem Nutzerfoto am 12.11.2026: Die abgebildete Breadboard-Verdrahtung entspricht wegen der um 90° gedrehten Board-Ausrichtung nicht den physischen Pico-Pins im Schaltbild; insbesondere liegt Servo-Rot links oben statt an VBUS rechts oben und Servo-Orange rechts statt an GP8 links. Auf dem Foto sind keine eingelöteten Stiftleisten erkennbar. Diese Beobachtung erklärt eine ausbleibende Bewegung trotz erfolgreicher Software-RPCs. Ein PIN-geschützter direkter Servotest wurde ergänzt, für den Schranken-Pico gebaut und als UF2 auf COM5 geflasht. Die neue Webseite mit Testformular antwortete über WLAN mit HTTP 200; der eigentliche Servotest wurde wegen der sichtbaren Fehlverdrahtung noch nicht ausgelöst. Eine mechanische Bestätigung ist nach Korrektur der Kontakte erforderlich.

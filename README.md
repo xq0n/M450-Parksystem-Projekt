@@ -4,14 +4,16 @@
 
 ## Projektbeschreibung
 
-Zwei WLAN-fähige Picos bilden ein Parkhausmodell: Kennzeichen eingeben, einfahren, Parkgebühr berechnen, Karte/TWINT als Testzahlung bestätigen und ausfahren. Zwei echte SG90-Servos bewegen die Ein- und Ausfahrtsschranke. Die manuelle Kennzeicheneingabe und simulierte Zahlung entsprechen ausdrücklich dem Testkonzept; eine Kamera oder ein Zahlungsdienstleister wird nicht benötigt.
+Zwei WLAN-fähige Picos bilden ein Parkhausmodell: Kennzeichen eingeben, einfahren, Parkgebühr berechnen, Karte/TWINT als Testzahlung bestätigen und ausfahren. Ein echter SG90-Servo bewegt die gemeinsame Ein- und Ausfahrtsschranke. Die manuelle Kennzeicheneingabe und simulierte Zahlung entsprechen ausdrücklich dem Testkonzept; eine Kamera oder ein Zahlungsdienstleister wird nicht benötigt.
 
 | Rolle | Aufgabe | Programm |
 |---|---|---|
-| **Pico 1: Kasse** | Fahrzeugregister, Zeitstempel, Kapazität, Tarif, Gebühren, Zahlung, Kulanz, verbindliche Freigabe | `src/pico1/main.cpp` |
-| **Pico 2: Schranken** | Weboberfläche für Ein-/Ausfahrt, Kommunikation mit der Kasse, beide Servos | `src/pico2/main.cpp` |
+| **Board mit Servo: Schranke** | Eigene Webseite für Ein- und Ausfahrt, Kommunikation mit der Kasse, gemeinsamer Servo an GP8 | Environment `pico2-schranken`, `src/pico2/main.cpp`, `include/drivers/gate.h` |
+| **Board ohne Servo: Kasse** | Eigene Webseite für Fahrzeugregister, Tarif, Gebühren und Zahlung | Environment `pico1-kasse`, `src/pico1/main.cpp` |
 
-Alle konkret beschriebenen Testfälle **TC-01 bis TC-20** sind unterstützt, einschließlich Kapazität und Kulanzzeit. Die Fachlogik und Fehlerfälle werden automatisiert auf dem PC getestet; beide Rollen sind für **Pico W (RP2040)** und **Pico 2 W (RP2350)** kompilierbar. Echte WLAN-/Servo- und Usabilitytests am Aufbau stehen noch aus. Der genaue Stand steht in [TESTERGEBNISSE.md](docs/TESTERGEBNISSE.md).
+Die physischen Boards wurden getauscht: Das Board mit dem Servo bekommt das Schrankenprogramm. Das Testkonzept verlangt zwei Weboberflächen. Aktuell ist die **Schranken-Seite `http://192.168.1.126/`** für Kennzeichen und die **Kassen-Seite `http://192.168.1.127/`** für Zahlung/Tarif erreichbar. Die IPs können sich durch DHCP ändern. Beide Seiten werden direkt von ihrem jeweiligen Pico ausgeliefert; ein externer Webserver oder CSS-Dienst ist nicht erforderlich.
+
+Alle konkret beschriebenen Testfälle **TC-01 bis TC-20** sind unterstützt, einschließlich Kapazität und Kulanzzeit. Die Fachlogik und Fehlerfälle werden automatisiert auf dem PC getestet; beide Rollen sind für **Pico W (RP2040)** und **Pico 2 W (RP2350)** kompilierbar. Live-WLAN, Kassen-Webseite und Pico-zu-Pico-Erkennung wurden nach dem Rollentausch geprüft. Die physische Servobewegung und die vollständigen manuellen TK-Fälle müssen am Modell noch kontrolliert werden. Der genaue Stand steht in [TESTERGEBNISSE.md](docs/TESTERGEBNISSE.md).
 
 Die PDFs verweisen zusätzlich auf ein **nicht mitgeliefertes Anforderungsdokument mit US-01 bis US-14**. US-03/09 sind nicht beschrieben; US-10–14 werden im TK ausgenommen. Deshalb wird keine vollständige Umsetzung unbekannter Akzeptanzkriterien behauptet. Quellen, Widersprüche und Entscheidungen: [ANFORDERUNGEN.md](docs/ANFORDERUNGEN.md).
 
@@ -21,9 +23,9 @@ Die PDFs verweisen zusätzlich auf ein **nicht mitgeliefertes Anforderungsdokume
 |---|---|---|
 | 2 | Raspberry Pi **Pico W/WH** oder **Pico 2 W** | WLAN wurde vom Nutzer bestätigt; genaues Modell vor dem Flashen prüfen. Auch gemischte W-Modelle können die Rollen übernehmen. |
 | 2 | USB-Datenkabel passend zum Board, bei Original-Picos Micro-USB | Reine Ladekabel erlauben kein Programmieren. |
-| 2 | SG90-Positionsservo, mit Hebel und leichtem Modell-Schrankenarm | A S. 2–3 zeigt einen SG90; zwei Schranken benötigen zwei Antriebe. Keine Continuous-Rotation-Servos. |
-| 1 | Geregelte externe 5-V-Servo-Stromversorgung | Für beide Servos gemeinsam auslegen, auch Anlauf-/Blockierstrom berücksichtigen. 5 V / 2 A ist ein Vorschlag für das Modell, kein aus dem PDF belegter Modulwert. Tatsächliche Servodaten prüfen. |
-| nach Aufbau | Breadboard/Verteiler, passende Dupont-Kabel, gelötete Stiftleisten | 2 Signalleitungen, 2 Servo-VCC, 2 Servo-GND, Masseverbindung Pico 2–Servoversorgung. |
+| 1 | SG90-Positionsservo, mit Hebel und leichtem Modell-Schrankenarm | A S. 2–3 zeigt einen SG90; der tatsächliche Aufbau verwendet einen gemeinsamen Antrieb. Keine Continuous-Rotation-Servos. |
+| 1 | Geregelte externe 5-V-Servo-Stromversorgung | Für den gemeinsamen Servo gemeinsam auslegen, auch Anlauf-/Blockierstrom berücksichtigen. 5 V / 2 A ist ein Vorschlag für das Modell, kein aus dem PDF belegter Modulwert. Tatsächliche Servodaten prüfen. |
+| nach Aufbau | Breadboard/Verteiler, passende Dupont-Kabel, gelötete Stiftleisten | 1 Signalleitung, 1 Servo-VCC, 1 Servo-GND, Masseverbindung Schranken-Pico–Servoversorgung. |
 | 1 | 2,4-GHz-WLAN mit Router/Access Point | Beide Picos und Browser im selben LAN; kein Gastnetz mit Client-Isolation. |
 | 1 | PC/Laptop mit Browser und USB | Für Build, Upload und beide Webseiten; kein zusätzlicher Anwendungsserver notwendig. |
 
@@ -44,7 +46,7 @@ Ein Pico ohne WLAN passt ohne zusätzliche, hier nicht spezifizierte Netzwerkhar
 
 **Vor dem Verdrahten alle Stromquellen trennen.** Die Angaben „Pin“ sind physische Nummern der 40-poligen Leiste; `GP8`/`GP9` sind GPIO-Nummern. Board-Aufdruck und Pinout abgleichen.
 
-### Pico 1: Kasse
+### Board ohne Servo: Kassenrolle
 
 | Anschluss | Verbindung |
 |---|---|
@@ -52,41 +54,31 @@ Ein Pico ohne WLAN passt ohne zusätzliche, hier nicht spezifizierte Netzwerkhar
 | WLAN | Gemeinsames 2,4-GHz-Netz |
 | GPIO / VBUS / 3V3 | Für die Kasse keine externen Anschlüsse erforderlich |
 
-### Pico 2: Schranken und Servos
+### Board mit Servo: eine gemeinsame Schranke
 
-| Pico 2 / Versorgung | Ziel | Kabelfarbe bei typischem SG90 |
-|---|---|---|
-| **GP8, physischer Pin 11** | Signal Einfahrtservo | Orange/Gelb |
-| **GP9, physischer Pin 12** | Signal Ausfahrtservo | Orange/Gelb |
-| **GND, physischer Pin 8** | Minus/GND der externen Servoversorgung | Gemeinsame Masse |
-| Externes **+5 V** | VCC beider Servos | Rot |
-| Externes **GND** | GND beider Servos | Braun/Schwarz |
-| USB Pico 2 | PC oder USB-Stromversorgung für Pico 2 | USB-Datenkabel beim Flashen |
+Der tatsächliche Aufbau hat **einen SG90 für Einfahrt und Ausfahrt**, am Schranken-Pico (COM5 / USB-ID `E663AC91D337542C` nach dem zuletzt bestätigten Rollentausch). GP9 wird nicht verwendet.
 
-GP8 folgt dem Beispiel auf A S. 3. GP9 stammt aus der bestehenden Codebase und ist eine **konfigurierbare Projektbelegung**, keine zweite Pinvorgabe des PDFs. Beide W-Boardgenerationen verwenden für diese Anschlüsse dieselben physischen Pinnummern.
+| Anschluss am Schranken-Pico | Servo |
+|---|---|
+| GP8, physischer Pin 11 | Orange/Gelb: Signal |
+| VBUS, physischer Pin 40 (5 V bei USB-Versorgung) | Rot: VCC, entsprechend PDF-Beispiel für einen SG90 |
+| GND, physischer Pin 8 | Braun/Schwarz: Masse |
 
-```text
-Pico 1 (Kasse)  <--- gemeinsames WLAN --->  Pico 2 (Schranken)
-                                              GP8 ---- Signal Einfahrt
-                                              GP9 ---- Signal Ausfahrt
-                                              GND ----+---- GND Servo 1
-                                                      +---- GND Servo 2
-                                                      +---- Minus 5-V-Netzteil
-                          Plus 5-V-Netzteil ------------+---- VCC Servo 1
-                                                      +---- VCC Servo 2
-```
+**Ausrichtung wie auf dem Foto (USB oben, Bauteile sichtbar):** Pin 1/GP0 ist oben links, Pin 40/VBUS oben rechts. GND/Pin 8 liegt links in der 8. Pin-Reihe von oben, GP8/Pin 11 links in der 11. Pin-Reihe von oben. Die Positionen aus einem quer gedrehten Schaltbild nicht ungeändert auf das senkrechte Board übertragen. Ein Pico ohne eingelötete Stiftleisten stellt durch bloßes Auflegen auf das Breadboard keinen zuverlässigen Kontakt her: zuerst 2×20 Stiftleisten fachgerecht einlöten oder die Leitungen direkt an die entsprechenden Pads löten. Vor jeder Umverdrahtung USB trennen.
 
-Die beiden Picos brauchen **keine Datenleitung untereinander**. Gemeinsame Masse ist für **Pico 2 und beide Servos** zwingend; eine zusätzliche Masseleitung zu Pico 1 ist für WLAN nicht erforderlich.
+Für eine externe geregelte 5-V-Servoversorgung stattdessen Servo-Rot an deren Pluspol anschließen, Servo-Braun und Pico-GND gemeinsam an Minus. Externes +5 V dabei nicht zusätzlich mit USB-VBUS verbinden. Keine 5 V an GPIO oder 3V3 anschließen. Bei Brummen oder Neustarts Versorgung und Mechanik prüfen.
 
-GPIOs führen **3,3-V-Logik**. Keine 5 V an GPIO oder `3V3(OUT)` anschließen. Servos nicht aus `3V3(OUT)` speisen. Beim beschriebenen Aufbau bleibt der Pluspol der externen Servoversorgung von Pico-VBUS/VSYS getrennt; nur die Masse wird verbunden. So werden USB und externe Versorgung nicht über ihre Pluspole miteinander verbunden. A S. 3 zeigt VBUS/Pin 40 für **einen** Servo als Beispiel; hier wird für zwei Servos eine getrennte Versorgung verwendet.
+Sowohl eine freigegebene Einfahrt als auch eine bezahlte Ausfahrt öffnen **denselben Servo an GP8** für 5000 ms. Währenddessen ist die Gegenrichtung gesperrt. Die Ein-/Ausfahrtbegriffe in der Testmatrix bezeichnen die logischen Vorgänge, keine zwei physischen Servos. Es werden keine Sensoren benötigt.
 
 ### Servos ausrichten
 
 1. Schrankenarme zunächst abnehmen. Signale und Masse wie oben anschließen.
-2. Firmware starten: beide Ausgänge starten unmittelbar mit der konfigurierten Schließposition.
+2. Firmware starten: Der Servo-Ausgang startet unmittelbar mit der konfigurierten Schließposition.
 3. Strom ausschalten, Hebel in geschlossener Position montieren, wieder einschalten.
 4. Einfahrt/Ausfahrt testen; bei Anschlag, Brummen oder falscher Richtung abschalten und Montage/Winkel anpassen.
-5. Alle Werte stehen in `include/parkhaus_config.h`: getrennte Offen-/Geschlossenwinkel, `SERVO_MIN_US`, `SERVO_MAX_US`, `GATE_OPEN_MS`, beide GPIOs. Startwerte aus dem Bestand: 0°/90°, 2500 ms, Pulse 540–2400 µs. Die passenden mechanischen Endlagen müssen am tatsächlichen Servo überprüft werden.
+5. Alle Werte stehen in `include/parkhaus_config.h`: Offen-/Geschlossenwinkel, `GATE_OPEN_MS`, GP8. Die Schranke bleibt 5 Sekunden offen. Servo-Pulse verwenden die konservativen Arduino-Pico-Standardwerte von 1000–2000 µs wie im Beispiel `Gate.cpp`; mechanische Endlagen trotzdem am tatsächlichen Servo prüfen.
+
+Nach korrigierter Verdrahtung auf der Schranken-Seite `http://192.168.1.126/` unter **„Servotest ohne Parkvorgang“** mit dem Demo-Admin-PIN `4500` den Servo direkt für 5 Sekunden öffnen. Dieser Test verändert keine Parkdaten. Bewegt sich der Servo dabei nicht, USB trennen und zuerst Kontakt der Lötstellen/Breadboard-Reihen sowie die 5-V-Versorgung zwischen Servo-Rot und Servo-Braun prüfen.
 
 ## Softwareinstallation
 
@@ -128,27 +120,25 @@ SSID und Passwort gelten für beide Picos; die Datei ist von Git ausgeschlossen.
 
 Standardwerte in `include/parkhaus_config.h` prüfen. Für den vollständigen TK-Durchlauf bleibt `PARKING_TEST_MODE = true`, damit Zeit vorsetzbar ist. Für normalen Modellbetrieb kann diese Testhilfe auf `false` gesetzt werden.
 
-### 2. Pico 1 anschließen
+### 2. Kassen-Board (ohne Servo) anschließen
 
-Board als **„Kasse“** beschriften. Zunächst nur diesen Pico per USB-Datenkabel anschließen. Für den ersten Upload BOOTSEL beim Einstecken gedrückt halten, dann loslassen. Es erscheint ein USB-Laufwerk; dessen Name hängt vom Modell ab.
+Das Board ohne Servo per USB-Datenkabel anschließen. Für den ersten Upload BOOTSEL beim Einstecken gedrückt halten, dann loslassen. Es erscheint ein USB-Laufwerk; dessen Name hängt vom Modell ab.
 
-### 3. Code auf Pico 1 übertragen
+### 3. Kassenprogramm und Kassen-Webseite übertragen
 
 Für Pico W/RP2040:
 
 ```powershell
 pio run -e pico1-kasse
-pio run -e pico1-kasse -t upload
 ```
 
 Für Pico 2 W/RP2350 stattdessen:
 
 ```powershell
 pio run -e pico1-kasse-rp2350
-pio run -e pico1-kasse-rp2350 -t upload
 ```
 
-Bei Uploadproblemen nach dem erfolgreichen Build die passende `firmware.uf2` manuell auf das BOOTSEL-Laufwerk kopieren, beispielsweise für Pico W (Laufwerksbuchstaben zuerst im Explorer prüfen):
+Die Kassen-Webseite ist Teil der Firmware. Die UF2-Datei auf das BOOTSEL-Laufwerk kopieren; Laufwerksbuchstaben zuerst im Explorer prüfen. Beispiel für Pico W:
 
 ```powershell
 Copy-Item .pio/build/pico1-kasse/firmware.uf2 E:\
@@ -160,48 +150,46 @@ Seriellen Port ermitteln und Monitor öffnen:
 
 ```powershell
 pio device list
-pio device monitor --port COM5 --baud 115200
+pio device monitor --port COM6 --baud 115200
 ```
 
-`COM5` durch den tatsächlich angezeigten Port ersetzen. Bei erfolgreichem WLAN erscheint alle 15 Sekunden `Weboberflaeche: http://...`. IP notieren und im Browser öffnen. Den Monitor mit `Ctrl+C` beenden, bevor derselbe Port erneut geflasht wird.
+Im Monitor den Kassen-Pico auswählen (derzeit COM6). Bei erfolgreichem WLAN erscheint `Weboberflaeche: http://...`. Aktuell ist die Kassen-Seite `http://192.168.1.127/`; DHCP kann die Adresse später ändern.
 
-### 4. Pico 2 anschließen
+### 4. Schranken-Board (mit Servo) anschließen
 
-Kasse vom Programmier-PC trennen oder klar getrennte Ports verwenden. Zweites Board **„Schranken“** beschriften. Servoversorgung noch ausschalten, Verkabelung prüfen und nur Pico 2 per USB anschließen. BOOTSEL wie oben verwenden.
+Kassen-Board vom Programmier-PC trennen oder beide Ports sorgfältig auseinanderhalten. Das Board mit Servo per USB anschließen. Servoversorgung noch ausschalten und die Verdrahtung prüfen. BOOTSEL wie oben verwenden.
 
-### 5. Code auf Pico 2 übertragen
+### 5. Schrankenprogramm übertragen
 
 Für Pico W/RP2040:
 
 ```powershell
 pio run -e pico2-schranken
-pio run -e pico2-schranken -t upload
 ```
 
 Für Pico 2 W/RP2350:
 
 ```powershell
 pio run -e pico2-schranken-rp2350
-pio run -e pico2-schranken-rp2350 -t upload
 ```
 
-Alternativ das entsprechende `.pio/build/<Environment>/firmware.uf2` auf das BOOTSEL-Laufwerk kopieren. Port mit `pio device list` ermitteln, Monitor öffnen und zweite IP notieren. Nie die Kassen-Firmware auf beide Boards kopieren.
+Die `.pio/build/pico2-schranken/firmware.uf2` auf das BOOTSEL-Laufwerk kopieren (für RP2350 `.pio/build/pico2-schranken-rp2350/firmware.uf2`). Der Servo-Pico ist derzeit COM5 / USB-ID `E663AC91D337542C`; die Kasse ist COM6 / USB-ID `E663A837CB54A92D`. Firmwarezuordnung nach Funktion: Kasse auf das Board ohne Servo, Schranke auf das Board mit Servo. Die Rollen sind nach einem Hardwaretausch anhand der Komponenten zuzuordnen, nicht anhand der früheren Pico-Beschriftung.
 
 ### 6. Picos verbinden
 
-Beide mit demselben WLAN starten. Die Firmware entdeckt die Kasse über UDP im lokalen Subnetz. **Kein UART/I2C/SPI-Kabel** ist notwendig. Beide Webseiten sind per IP erreichbar; mDNS/`.local` wird nicht vorausgesetzt. In der Schrankenansicht erscheint nach dem Handshake „Kasse: verbunden“ und ein Link zur Kasse.
+Beide mit demselben WLAN starten. Die Firmware entdeckt die Kasse über UDP im lokalen Subnetz. **Kein UART/I2C/SPI-Kabel** ist notwendig. Im Browser die Schranken-Seite für Ein-/Ausfahrt und die Kassen-Seite für Bezahlung öffnen. Auf der Schranken-Seite muss „Kasse: verbunden“ stehen.
 
 Blockiert das WLAN Broadcasts, der direkte Verkehr ist aber erlaubt: Kassen-IP im Router reservieren und `PARKING_CASH_IP` in `include/parkhaus_config.h` auf diese numerische Adresse setzen, beispielsweise `"192.168.1.42"` (nur Beispiel). Schranken-Firmware neu bauen/übertragen. UDP-Port **4210** und HTTP-Port **80** müssen zwischen den betreffenden Geräten erreichbar sein; bei Client-Isolation hilft eine feste IP allein nicht.
 
 ### 7. Gesamtsystem starten
 
-Bewegungsbereich freihalten. Pico 1 starten, dann Pico 2. Servoversorgung mit angeschlossener gemeinsamer Masse einschalten. Beide Schranken müssen geschlossen sein. Beide Webseiten öffnen und Status aktualisieren. Bei getrennten Stromquellen Signal nicht ohne Servomasse betreiben.
+Bewegungsbereich freihalten. Zuerst die Kasse, dann den Schranken-Pico starten. Servoversorgung mit angeschlossener gemeinsamer Masse einschalten. Die gemeinsame Schranke muss geschlossen sein. Beide Webseiten öffnen. Bei getrennten Stromquellen Signal nicht ohne Servomasse betreiben.
 
 ### 8. Grundfunktion kontrollieren
 
-Auf Pico 2 `LU 123456` einfahren lassen: Einfahrt öffnet etwa 2,5 s. Pico 1 zeigt das Kennzeichen mit Zeitstempel. Vor Zahlung eine Ausfahrt versuchen: Ausfahrt bleibt zu. An Pico 1 „Gebuehr berechnen“, Zahlungsmethode wählen und ausdrücklich bestätigen. Danach auf Pico 2 ausfahren: Ausfahrt öffnet etwa 2,5 s und der Datensatz verschwindet nach bestätigter Abschlussmeldung.
+Auf der Schranken-Seite `LU 123456` einfahren: die Schranke öffnet nach Freigabe 5 Sekunden. Danach an der Kassen-Seite Gebühr berechnen, Zahlungsmethode auswählen und bezahlen. Anschließend auf der Schranken-Seite ausfahren; derselbe Servo öffnet 5 Sekunden. Eine unbezahlte Ausfahrt muss abgewiesen werden.
 
-Die Schranken-Webseite aktualisiert einen laufenden Vorgang automatisch alle 2 s; sonst „Status aktualisieren“ verwenden. Ein zweiter Vorgang wird während einer Bewegung oder eines ungeklärten Abgleichs abgewiesen.
+Die Schranken-Seite zeigt Status und Rückmeldungen der Ein-/Ausfahrt; die Kassen-Seite zeigt Gebühren, Parkvorgänge und Tarif. Ein zweiter Vorgang wird während einer Bewegung oder eines ungeklärten Abgleichs abgewiesen.
 
 ### 9. Vollständiges TK demonstrieren
 

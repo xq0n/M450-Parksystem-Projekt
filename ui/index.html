@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>Parkhaus</title>
+  <link rel="stylesheet" href="https://unpkg.com/7.css">
+  <style>:root{color:#182230;background:#f4f7fb;font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}*{box-sizing:border-box}body{margin:0;padding:32px 16px}.app{background:#fff;border:1px solid #dfe5ec;border-radius:16px;max-width:620px;margin:5vh auto;overflow:hidden;box-shadow:0 14px 40px #1e293b12}header{border-bottom:1px solid #edf0f4;padding:25px 28px 18px}h1{letter-spacing:-.03em;margin:0 0 4px;font-size:1.45rem}header p,.hint{color:#657184;margin:0;font-size:.9rem}.content{padding:24px 28px 28px}label{margin-bottom:7px;font-size:.9rem;font-weight:600;display:block}input,select{width:100%;height:46px;font:inherit;color:inherit;background:#fff;border:1px solid #cbd4df;border-radius:9px;padding:0 12px}input:focus,select:focus{border-color:#4384db;outline:3px solid #bfd8ff}.actions{grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 22px;display:grid}button{color:#26364b;cursor:pointer;background:#fff;border:1px solid #cbd4df;border-radius:9px;min-height:44px;padding:9px 14px;font:600 .94rem system-ui}button:hover:not(:disabled){background:#f2f6fb}button.primary{color:#fff;background:#2563eb;border-color:#2563eb}button.primary:hover:not(:disabled){background:#1d4ed8}button:disabled{opacity:.5;cursor:not-allowed}.payment{grid-template-columns:1fr auto;align-items:end;gap:10px;display:grid}.payment button{min-width:145px}.status{background:#f4f7fb;border-radius:10px;align-items:flex-start;gap:10px;min-height:50px;margin-top:22px;padding:13px 14px;display:flex}.dot{background:#94a3b8;border-radius:50%;flex:none;width:9px;height:9px;margin-top:6px}.status[data-kind=ok] .dot{background:#16a34a}.status[data-kind=error] .dot{background:#dc2626}.status[data-kind=working] .dot{background:#f59e0b}.status p{margin:0;font-size:.92rem}.hint{margin-top:14px;font-size:.82rem}@media (width<=480px){body{padding:12px}.app{margin:2vh auto}.content{padding:20px}.payment{grid-template-columns:1fr}.payment button{width:100%}}</style>
+</head>
+<body>
+<main class="app">
+  <header><h1>Parkhaus</h1><p>Ein- und Ausfahrt an einer gemeinsamen Schranke</p></header>
+  <section class="content" aria-label="Parkvorgang">
+    <label for="plate">Kennzeichen</label>
+    <input id="plate" maxlength="16" placeholder="LU 123456" autocomplete="off">
+    <div class="actions">
+      <button class="primary" id="entry">Einfahren</button>
+      <button id="quote">Gebühr berechnen</button>
+    </div>
+    <div class="payment">
+      <div><label for="method">Zahlungsart (simuliert)</label><select id="method"><option value="card">Karte</option><option value="twint">TWINT</option></select></div>
+      <button class="primary" id="pay" disabled>Gebühr bezahlen</button>
+    </div>
+    <div class="actions"><button id="exit">Ausfahren</button><span></span></div>
+    <div class="status" id="status" data-kind="working" role="status"><span class="dot"></span><p>Verbinde mit den Picos …</p></div>
+    <p class="hint">Die Schranke öffnet nach gültiger Freigabe für 5 Sekunden. Kennzeichen und Zahlung sind simuliert.</p>
+  </section>
+</main>
+<script>
+(()=>{
+  const $=id=>document.getElementById(id),box=$('status'),message=box.querySelector('p');
+  let gate='',quoteId='',watching=false;
+  function show(text,kind='info'){message.textContent=text;box.dataset.kind=kind;}
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  async function pollGate(){
+    if(watching||!gate)return;watching=true;const until=Date.now()+15000;
+    try{while(Date.now()<until){const r=await fetch(gate+'/api/status',{cache:'no-store'});if(!r.ok)throw new Error();const s=await r.json();
+      if(s.open)show('Schranke offen. Sie schließt automatisch nach 5 Sekunden.','ok');
+      else if(s.busy)show(s.message||'Vorgang wird geprüft …','working');
+      else {show(s.message||'Bereit.','ok');break;}
+      await wait(300);
+    }}catch(_){show('Der Schranken-Pico antwortet gerade nicht. Bitte Verbindung prüfen.','error');}
+    finally{watching=false;}
+  }
+  async function post(path,data={},remote=false){
+    const plate=$('plate').value.trim().toUpperCase();if(!plate){show('Bitte zuerst ein Kennzeichen eingeben.','error');return null;}
+    if(remote&&!gate){show('Schranke noch nicht verbunden. Bitte kurz warten und erneut versuchen.','error');return null;}
+    show(path==='/entry'?'Einfahrt wird geprüft …':path==='/exit'?'Ausfahrt wird geprüft …':'Anfrage wird verarbeitet …','working');
+    try{const r=await fetch((remote?gate:'')+path,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({...data,plate})});const html=await r.text();const doc=new DOMParser().parseFromString(html,'text/html');
+      if(remote&&r.status===202){quoteId='';$('pay').disabled=true;pollGate();return {r,doc};}
+      const text=doc.querySelector('[role=status]')?.textContent||doc.body.innerText.trim();show(text,r.ok?'ok':'error');return {r,doc};
+    }catch(_){show(remote?'Schranken-Pico nicht erreichbar.':'Kasse nicht erreichbar. Bitte WLAN prüfen.','error');return null;}
+  }
+  $('entry').onclick=()=>post('/entry',{},true);
+  $('exit').onclick=()=>post('/exit',{},true);
+  $('quote').onclick=async()=>{const x=await post('/quote');if(!x)return;const id=x.doc.querySelector('input[name="quote"]')?.value||'';quoteId=id;$('pay').disabled=!id;
+    if(id){const amount=[...x.doc.querySelectorAll('h2')].find(h=>/Zu bezahlen|Nachzahlung/.test(h.textContent));show(amount?.textContent||'Gebühr berechnet. Angebot 2 Minuten gültig.','ok');}
+  };
+  $('pay').onclick=async()=>{if(!quoteId){show('Bitte zuerst die Gebühr berechnen.','error');return;}const x=await post('/pay',{quote:quoteId,method:$('method').value});if(x?.r.ok){quoteId='';$('pay').disabled=true;}};
+  fetch('/api/config',{cache:'no-store'}).then(r=>r.json()).then(x=>{gate=x.gate||'';if(gate)show('Verbunden. Du kannst Kennzeichen eingeben.','ok');else show('Kasse bereit; Schranken-Pico wird gesucht.','working');}).catch(()=>show('Kasse nicht erreichbar. Bitte WLAN prüfen.','error'));
+})();
+</script>
+</body>
+</html>

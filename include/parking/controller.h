@@ -10,6 +10,7 @@ class Controller {
   Notice notice = Notice::Ready;
   Result result = Result::Ok;
   bool ready() const { return ready_; }
+  bool barrierOpen() const { return entryGate.isOpen() || exitGate.isOpen(); }
   bool reconciling() const { return tx_.active && tx_.expired; }
   bool busy() const { return (tx_.active && tx_.request.op != Op::Ping && tx_.request.op != Op::Hello) || entryGate.isOpen() || exitGate.isOpen() || fault_; }
   uint32_t serverBoot() const { return server_; }
