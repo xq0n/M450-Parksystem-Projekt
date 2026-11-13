@@ -1,0 +1,37 @@
+# Detaillierte Testfälle TC-01 bis TC-20
+
+Die Testfälle basieren auf dem [Testkonzept (PDF)](sources/testkonzept.pdf), Seiten 9–15. Die Schritte konkretisieren den Test für den aktuellen Aufbau mit zwei Picos und einer gemeinsamen Schranke. Hardwaretests sind noch manuell durchzuführen; bestandene Hosttests ersetzen sie nicht.
+
+## Voraussetzungen
+
+- Beide Picos sind mit passender Firmware gestartet und im selben WLAN.
+- Die Schranken-Webseite zeigt, dass die Kasse verbunden ist.
+- Der Testmodus ist aktiv; Standardwerte: 50 Rp. pro angefangene 30 Minuten, 1500 Rp. Tagesmaximum, 15 Minuten Kulanz, 10 Parkplätze.
+- Testkennzeichen: `LU 123456`, `LU 654321`, `LU 999999`; zusätzlich leere Eingabe und `XX!?%&`.
+- Für unabhängige Testfälle beide Picos neu starten. Zusammenhängende Fälle können den angegebenen Parkvorgang weiterverwenden.
+- Nach jeder Schrankenbewegung mindestens 3 Sekunden auf den Abschluss der Meldung warten.
+
+| Testfall (TK-Seite) | Durchführung | Erwartetes Ergebnis |
+|---|---|---|
+| **TC-01 (S. 9–10): Einfahrt mit Zeitstempel** | Im leeren Grundzustand auf der Schranken-Webseite `LU 123456` einfahren lassen. | Der Servo öffnet 5 Sekunden und schließt wieder. Genau ein Fahrzeug wird mit Einfahrtszeit erfasst; es ist zunächst unbezahlt. |
+| **TC-02 (S. 10): Leere Eingabe** | Das Einfahrtfeld leer absenden. Für die Servervalidierung kann die Browserprüfung umgangen werden; siehe [Hardwarecheckliste](HARDWARETESTS.md). | Verständliche Fehlermeldung; kein Fahrzeug wird registriert und die Schranke bewegt sich nicht. |
+| **TC-03 (S. 10): Ungültige Zeichen** | `XX!?%&` als Kennzeichen eingeben und Einfahrt versuchen. | Eingabe wird abgelehnt; kein Fahrzeug wird registriert und die Schranke bleibt geschlossen. |
+| **TC-04 (S. 10–11): Duplikat** | Nach TC-01 dasselbe Kennzeichen nochmals eingeben, auch in Kleinbuchstaben, etwa `lu123456`. | Duplikat wird erkannt. Es entsteht kein weiterer Datensatz und keine zweite Öffnung. |
+| **TC-05 (S. 11): Volles Parkhaus** | Systeme neu starten, Kapazität an der Kasse auf 2 setzen. `LU 123456` und `LU 654321` einfahren lassen; danach `LU 999999` versuchen. | Belegung ist 2/2. Das dritte Fahrzeug wird als „Besetzt“ abgelehnt; nach einer bezahlten Ausfahrt wird ein Platz frei. |
+| **TC-06 (S. 11): Kurze Parkdauer** | Neu starten, `LU 123456` einfahren lassen, 1–2 Minuten warten oder die Testzeit um 1 Minute vorsetzen und die Gebühr berechnen. | Parkdauer wird plausibel angezeigt; bei weniger als 30 Minuten beträgt die Gebühr CHF 0.50. |
+| **TC-07 (S. 11–12): Lange Parkdauer** | Fahrzeug einfahren lassen, Testzeit um 1200 Minuten (20 Stunden) vorsetzen und Gebühr berechnen. Optional bis über 24 Stunden vorsetzen und erneut berechnen. | Nach 20 Stunden greift das Tagesmaximum von CHF 15.00. Bei mehr als 24 Stunden wird der nächste Tagesabschnitt berechnet; genau 24 Stunden kosten CHF 15.00. |
+| **TC-08 (S. 12): Tarif ändern** | Bei einem aktiven Fahrzeug den Tarif von 50 auf 100 Rp. ändern und die Gebühr neu berechnen. | Die neue Gebühr gilt ohne Firmware-Neubau (bei weniger als 30 Minuten CHF 1.00). Ein zuvor erstelltes Zahlungsangebot ist ungültig. |
+| **TC-09 (S. 12): Zahlung erfassen** | Für ein eingefahrenes Fahrzeug ein gültiges Angebot erstellen, Karte wählen und die Zahlung ausdrücklich bestätigen. | Zahlung wird simuliert und mit Kennzeichen, Betrag, Zahlungszeit und Kulanzende angezeigt. Bei weniger als 30 Minuten beträgt sie CHF 0.50. |
+| **TC-10 (S. 12): Unbekanntes Kennzeichen** | Für `LU 999999`, das nicht eingefahren wurde, eine Gebühr oder Zahlung anfordern. | Meldung „Kennzeichen nicht gefunden“; es wird kein Fahrzeug angelegt und keine Zahlung erfasst. |
+| **TC-11 (S. 13): Zahlung abbrechen** | Für ein nicht bezahltes Fahrzeug ein Angebot erstellen und abbrechen. Danach die Ausfahrt versuchen und gegebenenfalls das alte Formular erneut senden. | Fahrzeug bleibt unbezahlt; Ausfahrt wird gesperrt. Abgebrochene oder veraltete Angebote können nicht bestätigt werden. |
+| **TC-12 (S. 13): Zahlungsmethode** | Zwei Fahrzeuge einfahren lassen; eines mit Karte, das andere mit TWINT bezahlen. Danach beide Datensätze prüfen. | Beide Zahlungen werden simuliert mit korrekter Methode und Zeit erfasst. Es erfolgt keine echte Abbuchung. |
+| **TC-13 (S. 13): Bezahlte Ausfahrt** | Ein Fahrzeug bezahlen und innerhalb der Kulanzzeit auf der Schranken-Webseite ausfahren lassen. | Derselbe Servo öffnet 5 Sekunden. Nach bestätigter Ausfahrt ist das Fahrzeug nicht mehr aktiv und kann erneut einfahren. |
+| **TC-14 (S. 13–14, kritisch): Unbezahlte Ausfahrt** | Ein Fahrzeug einfahren, nicht bezahlen und die Ausfahrt versuchen. Zusätzlich ein unbekanntes Kennzeichen probieren. | Keine Öffnung. Ein registriertes, unbezahltes Fahrzeug wird abgewiesen; ein unbekanntes Kennzeichen wird als nicht gefunden gemeldet. |
+| **TC-15 (S. 14): Ausfahrt innerhalb der Kulanz** | Ein Fahrzeug bezahlen und innerhalb von 15 Minuten ausfahren. Bei Bedarf Testzeit um 14 Minuten vorsetzen. | Ausfahrt ohne weitere Zahlung. Die Kulanzfrist gilt einschließlich ihres Endzeitpunkts. |
+| **TC-16 (S. 14): Nachzahlung nach Kulanz** | Fahrzeug bei weniger als 1 Minute Parkdauer bezahlen, Testzeit um 31 Minuten vorsetzen und Ausfahrt versuchen. An der Kasse neu berechnen und Nachzahlung bestätigen; danach erneut ausfahren. | Erster Ausfahrtsversuch wird wegen abgelaufener Kulanz gesperrt. Bei 31–60 Minuten Gesamtdauer beträgt die Nachzahlung CHF 0.50. Nach Bestätigung gilt eine neue Kulanzfrist. Auch bei Restbetrag CHF 0 ist eine Bestätigung erforderlich. |
+| **TC-17 (S. 14): Statusabfrage zwischen den Picos** | Ein bezahltes Fahrzeug ausfahren lassen und die seriellen Meldungen beider Picos beobachten. | Anfrage und Antwort stimmen in Sequenz, Kennzeichen und Besuchs-ID überein. Die Schranke öffnet erst nach positiver Autorisierung; der Abschluss wird anschließend gemeldet. |
+| **TC-18 (S. 14–15, kritisch): Kommunikationsfehler** | Ein Fahrzeug einfahren und bezahlen. Bei geschlossener Schranke die Kasse vom WLAN trennen oder ausschalten und Ausfahrt versuchen. Danach Verbindung wiederherstellen. | Keine Öffnung ohne Autorisierung. Eine verspätete Antwort führt nicht nachträglich zur Öffnung. Nach Wiederverbindung muss der Zustand abgeglichen werden; bei ausgeschalteter Kasse ist deren Datenverlust zu berücksichtigen. |
+| **TC-19 (S. 15): Zwei Fahrzeuge** | `LU 123456` und `LU 654321` einfahren lassen, getrennt bezahlen und nacheinander ausfahren. Dazwischen den Status prüfen. | Zeiten, Beträge und Zahlungen bleiben den jeweiligen Fahrzeugen zugeordnet. Nach der ersten Ausfahrt bleibt nur das zweite Fahrzeug aktiv. |
+| **TC-20 (S. 15): Verständlichkeit der Bedienung** | Eine unvorbereitete Person nur mit den beiden geöffneten Webseiten Einfahrt, Zahlung, Ausfahrt und Korrektur eines Fehlers durchführen lassen. Keine zusätzliche Erklärung geben. | Bedienperson versteht die nötigen Schritte und Rückmeldungen. Unklare Stellen und Probleme wörtlich protokollieren; der Test gilt nicht automatisch als bestanden. |
+
+TC-14 und TC-18 sind kritische Sicherheitsfälle. Eine unberechtigte Öffnung ist ein kritischer Fehler und muss vor einer Abnahme behoben werden. Ergebnisse und Abweichungen für alle Fälle im [Testprotokoll](TESTPROTOKOLL.md) eintragen. Der vollständige Ablauf, zusätzliche Hardwareprüfungen und Testbefehle stehen in der [Hardwarecheckliste](HARDWARETESTS.md).
