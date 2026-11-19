@@ -3,11 +3,12 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include "parkhaus_config.h"
+#include "parking/barrier.h"
 
 namespace hardware {
 // One physical servo for both directions. The payment/controller logic decides
 // when open() may be called; the motor handling mirrors the supplied Gate.cpp.
-class Gate {
+class Gate final : public parking::Barrier {
  public:
   void begin() {
     servo_.attach(BARRIER_SERVO_PIN);
@@ -15,12 +16,12 @@ class Gate {
   }
   bool attached() { return servo_.attached(); }
   bool isOpen() const { return isOpen_; }
-  void open() {
+  void open() override {
     servo_.write(BARRIER_OPEN_ANGLE);
     isOpen_ = true;
     openedAt_ = millis();
   }
-  void close() {
+  void close() override {
     servo_.write(BARRIER_CLOSED_ANGLE);
     isOpen_ = false;
   }

@@ -8,6 +8,7 @@
 namespace {
 parking::Store store;
 parking::Clock clockSource;
+hardware::ArduinoTicks uptime;
 parking::Service* service = nullptr;
 hardware::Network network;
 hardware::Datagram link;
@@ -71,7 +72,7 @@ hardware::Response quote(const char* plate) {
 }
 
 hardware::Response handle(const parking::HttpRequest& q) {
-  clockSource.update(millis());
+  clockSource.update(uptime.ticks());
   if (!strcmp(q.method, "GET") && !strcmp(q.path, "/api/config")) {
     String body = String("{\"gate\":\"");
     if (gateAddress != IPAddress()) body += "http://" + gateAddress.toString();
@@ -133,7 +134,7 @@ void setup() {
   network.begin("parkhaus-kasse");
 }
 void loop() {
-  clockSource.update(millis());
+  clockSource.update(uptime.ticks());
   const bool up = network.tick(); link.online(up); web.online(up);
   for (int budget = 0; budget < 4; ++budget) {
     parking::Message q, a; IPAddress from;

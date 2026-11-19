@@ -4,8 +4,13 @@
 #include <WiFiUdp.h>
 #include "parkhaus_config.h"
 #include "parking/protocol.h"
+#include "parking/station.h"
 
 namespace hardware {
+class ArduinoTicks final : public parking::TickSource {
+ public:
+  uint32_t ticks() const override { return millis(); }
+};
 inline uint32_t bootId() { uint32_t n = rp2040.hwrand32(); return n ? n : 1; }
 class Network {
  public:

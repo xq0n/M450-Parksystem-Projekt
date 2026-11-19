@@ -10,8 +10,18 @@ hardware::Network network;
 hardware::Datagram link;
 parking::Controller* controller = nullptr;
 IPAddress cashAddress;
+class UdpCashLink final : public parking::CashLink {
+ public:
+  void transmit(const parking::Message& request, bool discover) override {
+    link.send(request, discover ? hardware::Datagram::discovery() : cashAddress);
+  }
+};
+UdpCashLink cashLink;
+hardware::ArduinoTicks uptime;
+parking::GateStation* station = nullptr;
 hardware::Gate barrierGate;
-bool servosReady = false, barrierWasOpen = false;
+parking::BarrierOutput barrierOutput(barrierGate);
+bool servosReady = false;
 
 String statusText() {
   using parking::Notice;
@@ -74,20 +84,14 @@ hardware::Response handle(const parking::HttpRequest& q) {
   char plate[parking::PlateSize];
   if (!ui::plate(q, plate)) return {400, home(ui::result(parking::Result::Invalid))};
   const auto op = !strcmp(q.path, "/entry") ? parking::Op::Entry : parking::Op::Authorize;
-  auto r = controller->action(op, plate, millis());
+  auto r = station->action(op, plate);
   return {r == parking::Result::Ok ? 202 : 409, home(r == parking::Result::Ok ? "" : ui::result(r), r == parking::Result::Ok)};
 }
 hardware::HttpServer web(handle);
 void serviceController() {
-  parking::Message q;
-  if (controller->poll(millis(), q)) {
-    // After timeout rediscover even an outstanding transaction (DHCP address may change).
-    link.send(q, q.op == parking::Op::Hello || controller->reconciling() ? hardware::Datagram::discovery() : cashAddress);
-  }
+  station->poll();
   const bool open = controller->barrierOpen();
-  if (open != barrierWasOpen) {
-    if (open) barrierGate.open(); else barrierGate.close();
-    barrierWasOpen = open;
+  if (barrierOutput.update(open)) {
     Serial.printf("Gemeinsame Schranke GP%u: %s\n", BARRIER_SERVO_PIN, open ? "offen" : "geschlossen");
   }
   barrierGate.update();
@@ -99,6 +103,8 @@ void setup() {
   barrierGate.begin();
   servosReady = barrierGate.attached();
   static parking::Controller gateController(hardware::bootId(), PARKING_LINK_ID, GATE_OPEN_MS); controller = &gateController;
+  static parking::GateStation gateStation(gateController, uptime, cashLink);
+  station = &gateStation;
   Serial.println("Pico 2: Eine gemeinsame Schranke an GP8, geschlossen.");
   network.begin("parkhaus-schranke");
 }
@@ -109,7 +115,7 @@ void loop() {
     parking::Message a; IPAddress from;
     if (!link.receive(a, from)) break;
     if (a.op != parking::Op::Hello && from != cashAddress && !controller->reconciling()) continue;
-    if (controller->receive(a, millis())) {
+    if (station->receive(a)) {
       cashAddress = from; // Only after complete transaction/session correlation succeeded.
       if (a.op != parking::Op::Hello && a.op != parking::Op::Ping)
         Serial.printf("RPC reply seq=%lu op=%u plate=%s result=%u visit=%lu\n", (unsigned long)a.seq, unsigned(a.op), a.plate, unsigned(a.result), (unsigned long)a.visit);

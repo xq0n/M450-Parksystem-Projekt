@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
-#include "parking/controller.h"
+#include "parking/barrier.h"
+#include "parking/station.h"
 #include "parking/http_parser.h"
 
 using namespace parking;
@@ -127,69 +128,155 @@ void replay() {
   q.seq = 4; q.server = 99; CHECK(srv.handle(q, 500, a)); CHECK(a.result == Result::Session);
   q.link = 9; CHECK(!srv.handle(q, 500, a));
 }
+struct BarrierMock final : Barrier {
+  enum class Command { Open, Close };
+  std::vector<Command> commands;
+
+  void open() override { commands.push_back(Command::Open); }
+  void close() override { commands.push_back(Command::Close); }
+};
+
+struct FakeClock final : TickSource {
+  uint32_t now = 0;
+  uint32_t ticks() const override { return now; }
+};
+
+struct MemoryLink final : CashLink {
+  std::vector<Message> sent;
+  bool discovery = false;
+  void transmit(const Message& request, bool discover) override {
+    sent.push_back(request);
+    discovery = discover;
+  }
+};
+
+// Fixed cashier responses for this scenario, independent of the real Store.
+struct CashReplyStub final : CashLink {
+  Message reply;
+  Result result = Result::Ok;
+  void transmit(const Message& request, bool) override {
+    reply = request;
+    reply.reply = true;
+    reply.server = 11;
+    reply.visit = 1;
+    reply.result = result;
+  }
+};
+
+void isolatedExit() {
+  group("TC-13/14: isolated exit with a cashier stub and the five-second barrier timer");
+  Controller controller(22, 7, 5000);
+  FakeClock clock;
+  CashReplyStub cashier;
+  GateStation station(controller, clock, cashier);
+  BarrierMock gate;
+  BarrierOutput output(gate);
+  auto exchange = [&]() {
+    station.poll();
+    CHECK(station.receive(cashier.reply));
+    output.update(controller.barrierOpen());
+  };
+  clock.now = 1000;
+  exchange();  // discovery
+  exchange();  // handshake
+  cashier.result = Result::Unpaid;
+  CHECK(station.action(Op::Authorize, "LU1") == Result::Ok);
+  exchange();
+  CHECK(controller.result == Result::Unpaid);
+  CHECK(gate.commands.empty());
+  cashier.result = Result::Ok;
+  CHECK(station.action(Op::Authorize, "LU1") == Result::Ok);
+  exchange();
+  using Command = BarrierMock::Command;
+  CHECK(gate.commands == std::vector<Command>{Command::Open});
+  clock.now += 4999;
+  station.poll();
+  CHECK(!output.update(controller.barrierOpen()));
+  ++clock.now;
+  station.poll();
+  CHECK(output.update(controller.barrierOpen()));
+  const std::vector<Command> expected{Command::Open, Command::Close};
+  CHECK(gate.commands == expected);
+}
+
 struct Rig {
   Store store;
   Service service{store, 11, 7};
   Controller controller{22, 7};
-  uint32_t now = 0;
-  std::vector<Message> sent;
+  BarrierMock barrier;
+  BarrierOutput barrierOutput{barrier};
+  FakeClock clock;
+  MemoryLink link;
+  GateStation station{controller, clock, link};
   bool dropRequests = false, dropReplies = false;
   void pump(uint32_t ms) {
-    const uint32_t until = now + ms;
-    while (now < until) {
-      now += 10; Message q, a, decoded; uint8_t bytes[FrameSize];
-      if (!controller.poll(now, q)) continue;
-      sent.push_back(q); encode(q, bytes); CHECK(decode(bytes, FrameSize, decoded));
+    const uint32_t until = clock.now + ms;
+    while (clock.now < until) {
+      clock.now += 10; Message q, a, decoded; uint8_t bytes[FrameSize];
+      const auto before = link.sent.size();
+      station.poll();
+      barrierOutput.update(controller.barrierOpen());
+      if (link.sent.size() == before) continue;
+      q = link.sent.back(); encode(q, bytes); CHECK(decode(bytes, FrameSize, decoded));
       if (dropRequests) continue;
-      CHECK(service.handle(decoded, now, a)); encode(a, bytes); CHECK(decode(bytes, FrameSize, decoded));
-      if (!dropReplies) controller.receive(decoded, now);
+      CHECK(service.handle(decoded, clock.now, a)); encode(a, bytes); CHECK(decode(bytes, FrameSize, decoded));
+      if (!dropReplies) station.receive(decoded);
+      barrierOutput.update(controller.barrierOpen());
     }
   }
   Rig() { pump(1200); CHECK(controller.ready()); }
-  void enter(const char* plate = "LU1") { CHECK(controller.action(Op::Entry, plate, now) == Result::Ok); pump(30); CHECK(controller.entryGate.isOpen()); pump(2600); }
-  void pay(const char* plate = "LU1") { uint32_t q; CHECK(store.quote(plate, now, q) == Result::Ok); CHECK(store.pay(plate, q, Method::Card, now) == Result::Ok); }
+  void enter(const char* plate = "LU1") { CHECK(station.action(Op::Entry, plate) == Result::Ok); pump(30); CHECK(controller.entryGate.isOpen()); pump(2600); }
+  void pay(const char* plate = "LU1") { uint32_t q; CHECK(store.quote(plate, clock.now, q) == Result::Ok); CHECK(store.pay(plate, q, Method::Card, clock.now) == Result::Ok); }
 };
 void integration() {
   group("TC-01/09/13/17/19: both firmwares' actual domain/controller over encoded frames");
   Rig r; r.enter(); r.enter("LU2"); r.pay(); r.pay("LU2");
-  CHECK(r.controller.action(Op::Authorize, "LU1", r.now) == Result::Ok); r.pump(30);
+  r.barrier.commands.clear();
+  CHECK(r.station.action(Op::Authorize, "LU1") == Result::Ok); r.pump(30);
   CHECK(r.controller.exitGate.isOpen()); CHECK(r.controller.barrierOpen()); CHECK(r.store.count() == 2);
-  CHECK(r.controller.action(Op::Entry, "LU3", r.now) == Result::Busy);
+  using Command = BarrierMock::Command;
+  CHECK(r.barrier.commands == std::vector<Command>{Command::Open});
+  CHECK(r.station.action(Op::Entry, "LU3") == Result::Busy);
   r.pump(2700); CHECK(!r.controller.exitGate.isOpen()); CHECK(!r.controller.barrierOpen()); CHECK(r.store.count() == 1);
-  CHECK(r.controller.action(Op::Authorize, "LU2", r.now) == Result::Ok); r.pump(2800); CHECK(r.store.count() == 0);
+  const std::vector<Command> expected{Command::Open, Command::Close};
+  CHECK(r.barrier.commands == expected);
+  CHECK(r.station.action(Op::Authorize, "LU2") == Result::Ok); r.pump(2800); CHECK(r.store.count() == 0);
 }
 void denied() {
   group("TC-02/03/04/05/14: controller never opens on denied operations");
   Rig r; r.store.capacity = 1;
-  CHECK(r.controller.action(Op::Entry, "", r.now) == Result::Invalid);
-  CHECK(r.controller.action(Op::Entry, "XX!?%&", r.now) == Result::Invalid);
+  CHECK(r.station.action(Op::Entry, "") == Result::Invalid);
+  CHECK(r.station.action(Op::Entry, "XX!?%&") == Result::Invalid);
   r.enter();
-  for (auto op : {Op::Entry, Op::Authorize}) { CHECK(r.controller.action(op, "LU1", r.now) == Result::Ok); r.pump(30); CHECK(!r.controller.entryGate.isOpen() && !r.controller.exitGate.isOpen()); }
-  CHECK(r.controller.action(Op::Entry, "LU2", r.now) == Result::Ok); r.pump(30); CHECK(r.controller.result == Result::Full); CHECK(!r.controller.entryGate.isOpen());
+  r.barrier.commands.clear();
+  for (auto op : {Op::Entry, Op::Authorize}) { CHECK(r.station.action(op, "LU1") == Result::Ok); r.pump(30); CHECK(!r.controller.entryGate.isOpen() && !r.controller.exitGate.isOpen()); }
+  CHECK(r.station.action(Op::Entry, "LU2") == Result::Ok); r.pump(30); CHECK(r.controller.result == Result::Full); CHECK(!r.controller.entryGate.isOpen());
+  CHECK(r.barrier.commands.empty());
 }
 void losses() {
   group("TC-18: offline cashier, lost entry ACK, late grant rollback, reconnect");
   Rig r; r.dropReplies = true;
-  CHECK(r.controller.action(Op::Entry, "LU1", r.now) == Result::Ok); r.pump(2100);
+  CHECK(r.station.action(Op::Entry, "LU1") == Result::Ok); r.pump(2100);
   CHECK(r.store.count() == 1); CHECK(!r.controller.entryGate.isOpen()); CHECK(!r.controller.barrierOpen()); CHECK(r.controller.notice == Notice::Timeout);
   CHECK(r.controller.reconciling());
-  CHECK(r.controller.action(Op::Entry, "LU2", r.now) == Result::Busy);
+  r.pump(1000); CHECK(r.link.discovery);
+  CHECK(r.station.action(Op::Entry, "LU2") == Result::Busy);
   r.dropReplies = false; r.pump(1200); CHECK(r.store.count() == 0); CHECK(!r.controller.entryGate.isOpen()); CHECK(!r.controller.busy());
   CHECK(!r.controller.reconciling());
   r.enter(); r.pay(); r.dropRequests = true;
-  CHECK(r.controller.action(Op::Authorize, "LU1", r.now) == Result::Ok); r.pump(2000);
+  CHECK(r.station.action(Op::Authorize, "LU1") == Result::Ok); r.pump(2000);
   CHECK(!r.controller.exitGate.isOpen()); r.dropRequests = false; r.pump(1500);
   CHECK(!r.controller.exitGate.isOpen()); CHECK(!r.store.find("LU1")->exiting);
-  CHECK(r.controller.action(Op::Authorize, "LU1", r.now) == Result::Ok); r.pump(30); CHECK(r.controller.exitGate.isOpen());
+  CHECK(r.station.action(Op::Authorize, "LU1") == Result::Ok); r.pump(30); CHECK(r.controller.exitGate.isOpen());
   r.dropReplies = true; r.pump(4500); CHECK(!r.controller.exitGate.isOpen()); CHECK(r.store.count() == 0);
   r.dropReplies = false; r.pump(1500); CHECK(r.store.count() == 0); CHECK(!r.controller.busy());
 }
 void retryAndStale() {
   group("Retry before deadline opens once; unrelated and old responses cannot open");
-  Rig r; r.dropReplies = true; CHECK(r.controller.action(Op::Entry, "LU1", r.now) == Result::Ok); r.pump(400);
+  Rig r; r.dropReplies = true; CHECK(r.station.action(Op::Entry, "LU1") == Result::Ok); r.pump(400);
   CHECK(r.store.count() == 1); r.dropReplies = false; r.pump(250); CHECK(r.controller.entryGate.isOpen());
-  Message old = r.sent.back(), a; CHECK(r.service.handle(old, r.now, a)); CHECK(!r.controller.receive(a, r.now));
-  r.pump(2600); CHECK(!r.controller.entryGate.isOpen()); CHECK(!r.controller.receive(a, r.now));
+  Message old = r.link.sent.back(), a; CHECK(r.service.handle(old, r.clock.now, a)); CHECK(!r.controller.receive(a, r.clock.now));
+  r.pump(2600); CHECK(!r.controller.entryGate.isOpen()); CHECK(!r.controller.receive(a, r.clock.now));
   Transaction tx; auto q = request(Op::Authorize, 50, "LU 1"); tx.start(q, 100);
   a = q; a.reply = true; a.visit = 7;
   auto wrong = a; wrong.seq++; CHECK(!tx.accept(wrong, 101));
@@ -205,10 +292,10 @@ void timeAndRestart() {
   GateTimer g; CHECK(g.open(0xfffffff0, 2500)); CHECK(!g.tick(0x900)); CHECK(g.tick(0x9b4)); CHECK(!g.isOpen());
   CHECK(fee(30ULL * 86400000, Tariff{}) == 45000);
   Rig r; r.enter(); r.pay(); r.dropRequests = true;
-  CHECK(r.controller.action(Op::Authorize, "LU1", r.now) == Result::Ok); r.pump(10);
+  CHECK(r.station.action(Op::Authorize, "LU1") == Result::Ok); r.pump(10);
   Store empty; Service restarted(empty, 99, 7); Message a;
-  CHECK(restarted.handle(r.controller.pending(), r.now, a)); CHECK(a.result == Result::Session);
-  CHECK(r.controller.receive(a, r.now)); CHECK(!r.controller.exitGate.isOpen()); CHECK(!r.controller.ready());
+  CHECK(restarted.handle(r.controller.pending(), r.clock.now, a)); CHECK(a.result == Result::Session);
+  CHECK(r.controller.receive(a, r.clock.now)); CHECK(!r.controller.exitGate.isOpen()); CHECK(!r.controller.ready());
 }
 HttpRequest parse(const std::string& s) { HttpRequest q; for (char c : s) q.feed(c); return q; }
 void http() {
@@ -225,6 +312,7 @@ void http() {
   q = parse("POST / HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 5\r\n\r\na=1"); CHECK(q.state == HttpRequest::Reading);
 }
 int main() {
+  isolatedExit();
   inputs(); billing(); lifecycle(); payments(); grace(); protocol(); replay(); integration(); denied(); losses(); retryAndStale(); timeAndRestart(); http();
   printf("PASS: %d groups, %d checks\n", groups, checks);
 }
