@@ -1,4 +1,61 @@
-# Verifikation vom 12.11.2026
+# Testergebnisse
+
+## Aktuelle Verifikation vom 20.11.2026: Testdoubles
+
+`python tools/test_host.py` wurde unter Windows mit Python 3.12 und GCC 15.2.0 (MSYS2 UCRT64), C++17, `-Wall -Wextra -Werror -pedantic` ausgeführt.
+
+**Ergebnis: 17 Testgruppen, 11 741 erfolgreiche Prüfungen, Exit-Code 0.** Der Zähler enthält auch wiederholte Assertions und Protokollprüfungen; er entspricht nicht der Zahl unterschiedlicher fachlicher Testfälle. Der ältere Teststand weiter unten ist historisch.
+
+| Gruppe | Prüfung | Testkonzept |
+|---|---|---|
+| 1 `isolatedStorage` | Echter Kassendienst mit injiziertem `VehicleStoreMock`: Ergebnisse und Parameter, Antwortcache ohne zweiten Speicherzugriff, Abschluss/Storno, falsche Sitzung/Link-ID | TC-01/13/14/17/18 |
+| 2 `isolatedInput` | `PlateInputStub` ersetzt Browser/Kamera: fehlende, ungültige und gültige Eingaben; unbezahlte Ausfahrt bleibt geschlossen, bezahlte wird freigegeben | TC-01/02/03/13/14 |
+| 3 `httpInput` | Produktiver `HttpPlateInput`: Formulardekodierung und Normalisierung, fehlende/doppelte/fehlerhafte Werte und zu kleiner Zielpuffer | TC-01/02/03 |
+| 4 `isolatedExit` | Vorgegebene Kassenantworten, Schranken-Mock und Fake-Uhr: bezahlt/unbezahlt, genau ein Öffnen/Schließen, Grenze 4999/5000 ms | TC-13/14 |
+| 5 `inputs` | Kennzeichen und strikte Zahlen | TC-01/02/03 |
+| 6 `billing` | Tarifgrenzen, Tagesmaximum, Mehrtage, Tarifwechsel | TC-06/07/08 |
+| 7 `lifecycle` | Einfahrtszeit, Duplikate, Kapazität, getrennte Fahrzeuge | TC-01/04/05/19 |
+| 8 `payments` | Bestätigung, Abbruch, unbekanntes Kennzeichen, Methoden, alte/doppelte Zahlung | TC-09/10/11/12 |
+| 9 `grace` | Zahlungsfreigabe, exakte Kulanzgrenze und Nachzahlung | TC-13/14/15/16 |
+| 10 `protocol` | CRC32, Format, Längen, Bitfehler und ungültige Frames | TC-17/18 |
+| 11 `replay` | Wiederholte/geänderte/veraltete Anfragen und Sitzungen | TC-17/18 |
+| 12 `integration` | Echter Speicher, Kassendienst und Controller über kodierte Frames | TC-01/09/13/17/19 |
+| 13 `denied` | Keine Öffnung bei ungültig, Duplikat, voll oder unbezahlt | TC-02/03/04/05/14 |
+| 14 `losses` | Verlorene Anfragen/Antworten, Timeout, späte Freigabe und Wiederverbindung | TC-18 |
+| 15 `retryAndStale` | Wiederholung vor Frist, unpassende/alte Antworten | TC-17/18 |
+| 16 `timeAndRestart` | Zeitüberlauf, 30 Tage, nichtblockierendes Schließen und neue Sitzung | TC-07/18 |
+| 17 `http` | Partielle/übergroße HTTP-Anfragen, Framing und Formulardaten | Webeingaben |
+
+Die Änderungen ergänzen `VehicleStore` und `PlateInput` als austauschbare Schnittstellen. Die Körper der bestehenden Speicher-, Gebühren-, Zahlungs-, Kulanz- und Protokolloperationen sowie der Controller und der Servo-Treiber bleiben unverändert. Die Formulardekodierung und Normalisierung verwenden weiterhin dieselben Regeln; ungültige Schrankenformulare antworten weiterhin mit HTTP 400.
+
+Der aktuelle Stand wurde nicht auf angeschlossene Picos übertragen; bei der Prüfung wurden keine seriellen Ports gefunden. Physische Servo-Bewegung, WLAN am Aufbau und TC-20 bleiben manuell zu bestätigen. Der historische Hardwarebericht unten ist kein Nachweis für einen neuen Hardwaretest.
+
+### Firmware-Builds vom 20.11.2026
+
+Alle vier bestehenden Buildziele wurden mit dem unveränderten `platformio.ini` erfolgreich gebaut. Für diesen Lauf wurden PlatformIO 6.2.0 unter `tmp/build-deps` und die Abhängigkeiten frisch über das Netzwerk unter `.pio-core` installiert. Es waren keine Änderungen an Boardkonfiguration, Arduino-Core, Servotreiber oder WLAN-Protokoll nötig. Im Buildlog finden sich keine Compilerfehler oder -warnungen.
+
+Ausgeführter Build mit dem Python-Interpreter dieser Umgebung und projektlokalen Abhängigkeiten:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path tmp/build-deps).Path
+$env:PLATFORMIO_CORE_DIR = Join-Path (Get-Location) '.pio-core'
+python -m platformio run -e pico1-kasse -e pico2-schranken -e pico1-kasse-rp2350 -e pico2-schranken-rp2350
+```
+
+Bei regulär installiertem PlatformIO baut `python tools/build.py` dieselben vier Ziele. Das lokale vollständige Buildlog liegt unter `tmp/firmware-build.log` (nicht eingecheckt).
+
+| Environment | Ergebnis | Statisches RAM | Flash | UF2 erzeugt |
+|---|---|---:|---:|---|
+| `pico1-kasse` | SUCCESS | 76 648 B / 262 144 B | 358 452 B / 2 093 056 B | ja |
+| `pico2-schranken` | SUCCESS | 73 968 B / 262 144 B | 354 148 B / 2 093 056 B | ja |
+| `pico1-kasse-rp2350` | SUCCESS | 76 836 B / 524 288 B | 354 328 B / 4 190 208 B | ja |
+| `pico2-schranken-rp2350` | SUCCESS | 74 188 B / 524 288 B | 350 184 B / 4 190 208 B | ja |
+
+Exit-Code 0. Die vier Dateien liegen unter `.pio/build/<Environment>/firmware.uf2`. Gebaut wurde mit den WLAN-Platzhaltern; vor dem Betrieb lokale Zugangsdaten eintragen und neu bauen. Statisches RAM ist ein Linkerwert und keine Messung des Laufzeitverbrauchs.
+
+Versionen: Raspberry-Pi-Platform 1.20.0, Commit `5d4561a05e3b212660ac6fdd3fbfb328d1988aa1`; Arduino-Pico 6.1.0, Commit `fd65f6d4ab168d4bb181a3709738fe353ac93585`; ARM-Toolchain/Picotool/PIOASM `5.160100.260719`, Compiler 16.1.0. Ein erfolgreicher Build belegt die Kompilierbarkeit für beide Boardfamilien, nicht die physische Funktion auf angeschlossenen Geräten.
+
+## Historische Verifikation vom 12.11.2026
 
 > Aktueller Aufbau: ein gemeinsamer SG90 am Schranken-Pico, GP8/Pin 11; fünf Sekunden Öffnungszeit. Beide Picos stellen wie im TK S. 2 eine eigene Webseite bereit: Kasse `192.168.1.127`, Schranke `192.168.1.126`.
 

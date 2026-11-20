@@ -1,5 +1,6 @@
 #pragma once
 #include "parking/controller.h"
+#include "parking/input.h"
 
 namespace parking {
 class TickSource {
@@ -23,6 +24,11 @@ class GateStation {
 
   Result action(Op operation, const char* plate) {
     return controller_.action(operation, plate, clock_.ticks());
+  }
+  Result action(Op operation, const PlateInput& input) {
+    char plate[PlateSize] = {};
+    if (!input.read(plate, sizeof(plate))) return Result::Invalid;
+    return action(operation, plate);
   }
   bool receive(const Message& response) {
     return controller_.receive(response, clock_.ticks());

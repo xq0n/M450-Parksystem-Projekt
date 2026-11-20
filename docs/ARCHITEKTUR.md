@@ -14,8 +14,7 @@ flowchart LR
   B[Browser] -->|Kassen-Seite, HTTP Port 80| P1[Pico 1: Kasse]
   B -->|Schranken-Seite, HTTP Port 80| P2[Pico 2: Schranken]
   P2 <-->|UDP Port 4210, Quittierung und CRC| P1
-  P2 -->|GP8: PIO-Servosignal| E[Einfahrtservo]
-  P2 -->|GP9: PIO-Servosignal| X[Ausfahrtservo]
+  P2 -->|GP8: PIO-Servosignal| E[Gemeinsamer Servo für Einfahrt und Ausfahrt]
 ```
 
 ## Module und Zeitsystem
@@ -24,6 +23,10 @@ flowchart LR
 - `parking/core.h`: Fahrzeuge, Tarifformel, Angebot, Abbruch, Zahlung, Kulanz und Besuchsnummern; keinerlei Arduino-/Netzwerkzugriff.
 - `parking/protocol.h`: explizite Serialisierung und CRC32, idempotenter Kassendienst, wiederholbare Transaktion.
 - `parking/controller.h`: derselbe Schranken-Zustandsautomat in Hosttests und Firmware. Entscheidet über Öffnen, Fristablauf, Stornierung und Abschluss.
+- `parking/station.h`: verbindet Controller, injizierte `TickSource` und `CashLink`; Kennzeicheneingaben können über das Interface `PlateInput` übergeben werden.
+- `parking/input.h` + `parking/http_input.h`: Eingabeschnittstelle und produktiver Formularadapter, der ohne Arduino/Browser testbar ist. Der HTTP-Handler verwendet denselben Adapter wie die Hosttests.
+- `parking/barrier.h`: `BarrierOutput` überträgt Zustandswechsel an eine injizierte `Barrier`; Firmware: Servo-Treiber, Test: Schranken-Mock.
+- `VehicleStore` in `parking/core.h`: schmale Schnittstelle für die Speicheroperationen des Kassendienstes. `Service` erhält sie über den Konstruktor. Produktiv bleibt der bestehende RAM-`Store` zuständig; isolierte Protokolltests verwenden einen Speicher-Mock.
 - `drivers/runtime.h`: echte Arduino-Pico-WiFi/UDP-APIs, `beginNoBlock`, Discovery, Socket-Wiederaufbau.
 - `drivers/http_server.h` + `parking/http_parser.h`: höchstens ein bearbeiteter HTTP-Client, begrenzte Header-/Bodylänge, Arbeit pro Schleifendurchlauf begrenzt.
 - `src/pico1/main.cpp` stellt die Kassen-Seite bereit und verwaltet Kasse/Zahlung. `src/pico2/main.cpp` stellt die Schranken-Seite bereit und verarbeitet Ein-/Ausfahrt. `include/drivers/gate.h` kapselt den einen Servo und öffnet/schließt wie das bereitgestellte Beispiel `Gate.cpp`.

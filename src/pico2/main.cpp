@@ -81,10 +81,10 @@ hardware::Response handle(const parking::HttpRequest& q) {
   if (strcmp(q.method, "POST") || (strcmp(q.path, "/entry") && strcmp(q.path, "/exit"))) return {404, home("Seite nicht gefunden.")};
   if (!servosReady) return {503, home("Servo-Treiber nicht bereit.")};
   if (barrierGate.isOpen()) return {409, home("Schranke noch aktiv. Bitte warten.")};
-  char plate[parking::PlateSize];
-  if (!ui::plate(q, plate)) return {400, home(ui::result(parking::Result::Invalid))};
+  parking::HttpPlateInput input(q);
   const auto op = !strcmp(q.path, "/entry") ? parking::Op::Entry : parking::Op::Authorize;
-  auto r = station->action(op, plate);
+  auto r = station->action(op, input);
+  if (r == parking::Result::Invalid) return {400, home(ui::result(r))};
   return {r == parking::Result::Ok ? 202 : 409, home(r == parking::Result::Ok ? "" : ui::result(r), r == parking::Result::Ok)};
 }
 hardware::HttpServer web(handle);

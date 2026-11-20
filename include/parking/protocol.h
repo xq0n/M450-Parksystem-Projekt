@@ -49,7 +49,7 @@ inline bool sameRequest(const Message& a, const Message& b) {
 }
 class Service {
  public:
-  Service(Store& store, uint32_t boot, uint32_t link) : store_(store), boot_(boot), link_(link) {}
+  Service(VehicleStore& store, uint32_t boot, uint32_t link) : store_(store), boot_(boot), link_(link) {}
   bool handle(const Message& q, uint64_t now, Message& a) {
     if (q.reply || q.link != link_) return false;
     a = q; a.reply = true; a.server = boot_;
@@ -77,7 +77,7 @@ class Service {
     last_ = q; answer_ = a; hasCache_ = true; return true;
   }
  private:
-  Store& store_;
+  VehicleStore& store_;
   uint32_t boot_, link_, client_ = 0;
   bool hasCache_ = false;
   Message last_, answer_;

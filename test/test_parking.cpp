@@ -5,6 +5,7 @@
 #include "parking/barrier.h"
 #include "parking/station.h"
 #include "parking/http_parser.h"
+#include "parking/http_input.h"
 
 using namespace parking;
 static int checks = 0, groups = 0;
@@ -102,6 +103,75 @@ void grace() {
 Message request(Op op, uint32_t seq, const char* plate = "") {
   Message m; m.op = op; m.link = 7; m.client = 22; m.server = 11; m.seq = seq; strcpy(m.plate, plate); return m;
 }
+
+// Fixed storage outcomes plus recorded calls; no real records or billing logic.
+struct VehicleStoreMock final : VehicleStore {
+  struct Call {
+    Op operation;
+    std::string plate;
+    uint64_t time;
+    uint32_t visit;
+    bool cancelExit, cancelEntry;
+  };
+  std::vector<Call> calls;
+  Result result = Result::Ok;
+  uint32_t grantedVisit = 42;
+  Result enter(const char* plate, uint64_t now, uint32_t& visit) override {
+    calls.push_back({Op::Entry, plate, now, 0, false, false});
+    if (result == Result::Ok) visit = grantedVisit;
+    return result;
+  }
+  Result authorize(const char* plate, uint64_t now, uint32_t& visit) override {
+    calls.push_back({Op::Authorize, plate, now, 0, false, false});
+    if (result == Result::Ok) visit = grantedVisit;
+    return result;
+  }
+  Result finish(const char* plate, uint32_t visit, bool cancelExit, bool cancelEntry) override {
+    calls.push_back({Op::Depart, plate, 0, visit, cancelExit, cancelEntry});
+    return result;
+  }
+};
+
+void isolatedStorage() {
+  group("TC-01/13/14/17/18: cashier protocol with injected storage mock");
+  VehicleStoreMock storage;
+  Service service(storage, 11, 7);
+  Message answer;
+  CHECK(service.handle(request(Op::Ping, 1), 100, answer));
+  CHECK(storage.calls.empty());
+  auto q = request(Op::Entry, 2, "LU 123456");
+  CHECK(service.handle(q, 123, answer));
+  CHECK(answer.result == Result::Ok && answer.visit == 42);
+  CHECK(storage.calls.size() == 1);
+  CHECK(storage.calls.back().operation == Op::Entry);
+  CHECK(storage.calls.back().plate == "LU 123456" && storage.calls.back().time == 123);
+  CHECK(service.handle(q, 456, answer));
+  CHECK(storage.calls.size() == 1 && answer.visit == 42); // Cached answer, no second write.
+  storage.result = Result::Unpaid;
+  CHECK(service.handle(request(Op::Authorize, 3, "LU 123456"), 789, answer));
+  CHECK(answer.result == Result::Unpaid && answer.visit == 0);
+  CHECK(storage.calls.back().operation == Op::Authorize && storage.calls.back().time == 789);
+  storage.result = Result::Ok;
+  CHECK(service.handle(request(Op::Authorize, 4, "LU 123456"), 800, answer));
+  CHECK(answer.result == Result::Ok && answer.visit == 42);
+  uint32_t seq = 5;
+  for (Op op : {Op::Depart, Op::CancelExit, Op::CancelEntry}) {
+    q = request(op, seq++, "LU 123456"); q.visit = 42;
+    CHECK(service.handle(q, 900, answer));
+    const auto& call = storage.calls.back();
+    CHECK(call.plate == "LU 123456" && call.visit == 42);
+    CHECK(call.cancelExit == (op == Op::CancelExit));
+    CHECK(call.cancelEntry == (op == Op::CancelEntry));
+  }
+  const auto count = storage.calls.size();
+  q = request(Op::Entry, seq++, "LU 654321"); q.server = 99;
+  CHECK(service.handle(q, 1000, answer));
+  CHECK(answer.result == Result::Session && storage.calls.size() == count);
+  q.server = 11; q.link = 99;
+  CHECK(!service.handle(q, 1000, answer));
+  CHECK(storage.calls.size() == count);
+}
+
 void protocol() {
   group("Protocol: CRC32, length, version, enum, string and bit corruption");
   CHECK(crc32(reinterpret_cast<const uint8_t*>("123456789"), 9) == 0xcbf43926);
@@ -228,6 +298,45 @@ struct Rig {
   void enter(const char* plate = "LU1") { CHECK(station.action(Op::Entry, plate) == Result::Ok); pump(30); CHECK(controller.entryGate.isOpen()); pump(2600); }
   void pay(const char* plate = "LU1") { uint32_t q; CHECK(store.quote(plate, clock.now, q) == Result::Ok); CHECK(store.pay(plate, q, Method::Card, clock.now) == Result::Ok); }
 };
+
+struct PlateInputStub final : PlateInput {
+  explicit PlateInputStub(const char* value) : value(value) {}
+  const char* value;
+  bool read(char* plate, size_t size) const override {
+    if (!value || strlen(value) >= size) return false;
+    strcpy(plate, value);
+    return true;
+  }
+};
+
+void isolatedInput() {
+  group("TC-01/02/03/13/14: web/camera input replaced by a plate stub");
+  Rig r;
+  const auto sent = r.link.sent.size();
+  const char* invalidInputs[] = {nullptr, "", "XX!?%&", "12345678901234567"};
+  for (const char* value : invalidInputs) {
+    PlateInputStub input(value);
+    CHECK(r.station.action(Op::Entry, input) == Result::Invalid);
+    CHECK(r.station.action(Op::Authorize, input) == Result::Invalid);
+  }
+  CHECK(r.link.sent.size() == sent && r.barrier.commands.empty());
+  CHECK(r.store.count() == 0);
+  PlateInputStub input(" lu 123456 ");
+  CHECK(r.station.action(Op::Entry, input) == Result::Ok);
+  CHECK(!r.controller.barrierOpen()); // Input alone does not grant entry.
+  r.pump(30);
+  CHECK(r.controller.entryGate.isOpen());
+  CHECK(r.store.find("LU123456") != nullptr);
+  r.pump(2600);
+  CHECK(r.station.action(Op::Authorize, input) == Result::Ok);
+  r.pump(30);
+  CHECK(r.controller.result == Result::Unpaid && !r.controller.barrierOpen());
+  r.pay("LU123456");
+  CHECK(r.station.action(Op::Authorize, input) == Result::Ok);
+  r.pump(30);
+  CHECK(r.controller.exitGate.isOpen());
+}
+
 void integration() {
   group("TC-01/09/13/17/19: both firmwares' actual domain/controller over encoded frames");
   Rig r; r.enter(); r.enter("LU2"); r.pay(); r.pay("LU2");
@@ -298,6 +407,23 @@ void timeAndRestart() {
   CHECK(r.controller.receive(a, r.clock.now)); CHECK(!r.controller.exitGate.isOpen()); CHECK(!r.controller.ready());
 }
 HttpRequest parse(const std::string& s) { HttpRequest q; for (char c : s) q.feed(c); return q; }
+void httpInput() {
+  group("TC-01/02/03: production HTTP plate adapter without a browser");
+  auto form = [](const std::string& body) {
+    return parse("POST /entry HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body);
+  };
+  auto q = form("plate=+lu+123456+");
+  char plate[PlateSize];
+  CHECK(q.state == HttpRequest::Complete);
+  CHECK(HttpPlateInput(q).read(plate, sizeof(plate)));
+  CHECK(!strcmp(plate, "LU 123456"));
+  char tiny[3];
+  CHECK(!HttpPlateInput(q).read(tiny, sizeof(tiny)));
+  for (const auto* body : {"", "other=LU1", "plate=", "plate=XX%21%3F%25%26", "plate=LU1&plate=LU2", "plate=LU%001", "plate=%xx"}) {
+    q = form(body);
+    CHECK(!HttpPlateInput(q).read(plate, sizeof(plate)));
+  }
+}
 void http() {
   group("HTTP: partial/oversize requests, strict framing, form encoding and duplicate fields");
   auto q = parse("GET / HTTP/1.1\r\nHost: pico\r\n\r\n"); CHECK(q.state == HttpRequest::Complete); CHECK(!strcmp(q.path, "/"));
@@ -312,6 +438,7 @@ void http() {
   q = parse("POST / HTTP/1.1\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 5\r\n\r\na=1"); CHECK(q.state == HttpRequest::Reading);
 }
 int main() {
+  isolatedStorage(); isolatedInput(); httpInput();
   isolatedExit();
   inputs(); billing(); lifecycle(); payments(); grace(); protocol(); replay(); integration(); denied(); losses(); retryAndStale(); timeAndRestart(); http();
   printf("PASS: %d groups, %d checks\n", groups, checks);

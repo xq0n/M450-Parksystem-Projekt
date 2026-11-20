@@ -30,7 +30,16 @@ struct Record {
   uint64_t entered = 0, paidAt = 0, paidCents = 0, quoteAt = 0, quoteCents = 0, graceUntil = 0;
   Method method = Method::None;
 };
-class Store {
+// The cashier protocol needs only these operations, not the storage layout.
+class VehicleStore {
+ public:
+  virtual ~VehicleStore() = default;
+  virtual Result enter(const char* raw, uint64_t now, uint32_t& visit) = 0;
+  virtual Result authorize(const char* raw, uint64_t now, uint32_t& visit) = 0;
+  virtual Result finish(const char* raw, uint32_t visit, bool cancelExit = false, bool cancelEntry = false) = 0;
+};
+
+class Store final : public VehicleStore {
  public:
   Tariff tariff;
   uint8_t capacity = 10;
@@ -41,7 +50,7 @@ class Store {
     return nullptr;
   }
   size_t count() const { size_t n = 0; for (const auto& r : records_) n += r.used; return n; }
-  Result enter(const char* raw, uint64_t now, uint32_t& visit) {
+  Result enter(const char* raw, uint64_t now, uint32_t& visit) override {
     char plate[PlateSize]; if (!normalizePlate(raw, plate)) return Result::Invalid;
     if (find(plate)) return Result::Duplicate;
     if (count() >= capacity) return Result::Full;
@@ -82,13 +91,13 @@ class Store {
     if (!quoteId || r->quote != quoteId) return Result::Stale;
     r->quote = 0; return Result::Ok;
   }
-  Result authorize(const char* raw, uint64_t now, uint32_t& visit) {
+  Result authorize(const char* raw, uint64_t now, uint32_t& visit) override {
     auto* r = find(raw); if (!r) return Result::NotFound;
     auto status = eligibility(*r, now);
     if (status == Result::Ok) { r->exiting = true; r->quote = 0; visit = r->visit; }
     return status;
   }
-  Result finish(const char* raw, uint32_t visit, bool cancelExit = false, bool cancelEntry = false) {
+  Result finish(const char* raw, uint32_t visit, bool cancelExit = false, bool cancelEntry = false) override {
     auto* r = find(raw); if (!r) return Result::NotFound;
     if (!visit || r->visit != visit) return Result::Stale;
     if (cancelEntry) {

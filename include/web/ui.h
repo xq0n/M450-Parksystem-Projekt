@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "parking/core.h"
 #include "parking/http_parser.h"
+#include "parking/http_input.h"
 #include "parkhaus_config.h"
 
 namespace ui {
@@ -45,5 +46,5 @@ inline bool admin(const parking::HttpRequest& q) { char p[64]; return q.arg("pin
 inline bool integer(const parking::HttpRequest& q, const char* name, uint32_t min, uint32_t max, uint32_t& out) {
   char b[16]; return q.arg(name, b, sizeof(b)) && parking::unsignedNumber(b, min, max, out);
 }
-inline bool plate(const parking::HttpRequest& q, char* out) { char b[33]; return q.arg("plate", b, sizeof(b)) && parking::normalizePlate(b, out); }
+inline bool plate(const parking::HttpRequest& q, char* out) { return parking::HttpPlateInput(q).read(out, parking::PlateSize); }
 } // namespace ui

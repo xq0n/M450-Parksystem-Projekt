@@ -1,5 +1,20 @@
 # Anforderungen, Quellen und Entscheidungen
 
+## Ergänzung: Testdoubles-Auftrag A02 (20.11.2026)
+
+Zusätzlich geprüft wurden `A02-01-Testdoubles-Parksystem.pdf` (3 Seiten) und `T03-02-Testdoubles.pdf` (4 Seiten). A02 definiert den Arbeitsauftrag, T03 erläutert Dependency Injection sowie Dummy, Fake, Stub, Mock und Spy. Daraus folgt keine Pflicht, alle fünf Arten oder ein bestimmtes Mocking-Framework zu verwenden.
+
+| A02-Anforderung | Umsetzung / Nachweis |
+|---|---|
+| Abhängigkeiten, benötigtes Verhalten, Probleme im Test und begründete Double-Wahl dokumentieren (S. 1–2) | README-Tabelle zu Schranke, Zeit, Transport, entfernter Kasse, Kennzeicheneingabe und Fahrzeugspeicher |
+| Logik ohne direkte Hardwareaufrufe, Schnittstellen von außen übergeben (S. 3) | `Barrier`, `TickSource`, `CashLink`, `PlateInput` und `VehicleStore`; produktive Adapter werden in der Firmware zusammengesetzt |
+| Tests ohne Hardware (S. 1) | Ausführbare C++-Hosttests mit Schranken-/Speicher-Mock, Fake-Uhr, Transport-Fake, Kassen-/Eingabe-Stub; zusätzliche Integration mit echtem RAM-Speicher |
+| README mit Mitgliedern, Double-Analyse, Testkonzeptbezug und Fazit (S. 3) | Alle vier Punkte in der README enthalten; mechanische Prüfung, reales WLAN und Usability werden als manuell verbleibend begründet |
+| Branch `testdoubles` und Git-Abgabe (S. 3) | Bestehender Arbeitsbranch `testdoubles`; Veröffentlichung des aktuellen Abgabestands per Commit und Push |
+| Anwendung funktioniert weiterhin auf den Picos (S. 3) | Gebühren-/Zahlungs-/Controllerlogik und Hardwaretreiber beibehalten; vier echte Firmware-Builds erfolgreich. Neuer Funktionstest am Aufbau bleibt offen, weil keine Boards angeschlossen erkannt wurden |
+
+Die aktuelle Verifikation mit 17 Testgruppen, 11 741 Prüfungen und den vier Firmware-Builds steht in [TESTERGEBNISSE.md](TESTERGEBNISSE.md). Die folgenden Abschnitte dokumentieren die älteren fachlichen Quellen und Entscheidungen.
+
 > Aktualisierung zum tatsächlichen Aufbau: Der Nutzer hat **eine gemeinsame Schranke** bestätigt. Ein SG90 an Pico 2, GP8/Pin 11, übernimmt beide Richtungen; GP9 entfällt. Angaben zu zwei Servos im ursprünglichen Entwurfs-/Teststand unten sind damit überholt. Aktuelle Verkabelung siehe README.
 
 

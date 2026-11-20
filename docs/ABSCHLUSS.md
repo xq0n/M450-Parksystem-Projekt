@@ -3,7 +3,7 @@
 > Aktueller Aufbau: **Eine gemeinsame Schranke** am Schranken-Pico, GP8/Pin 11, übernimmt beide Richtungen; GP9 entfällt. Nach dem physischen Boardtausch stellt die Kasse ihre eigene Webseite auf `192.168.1.127` bereit, die Schranke ihre Webseite auf `192.168.1.126`. Der Servo öffnet nach Freigabe fünf Sekunden.
 
 
-Stand 12.11.2026. Implementierung direkt im Repository. Beide RP2040-Firmwares wurden auf die angeschlossenen Boards übertragen und die Kassen-Webseite sowie die Pico-Erkennung im lokalen WLAN per HTTP geprüft. Keine Commits oder Veröffentlichungen durchgeführt.
+Aktualisierung 20.11.2026: Für A02 wurden Speicher und Kennzeicheneingabe zusätzlich hinter austauschbare Schnittstellen gelegt und mit Testdoubles geprüft. Die bestehende Gebühren-, Zahlungs-, Protokoll- und Servologik bleibt erhalten. Der Hardwarebericht vom 12.11.2026 beschreibt den damaligen Stand; für diese Aktualisierung wurde kein neuer Hardwaretest durchgeführt. Aktuelle Nachweise: [TESTERGEBNISSE.md](TESTERGEBNISSE.md).
 
 ## Ergebnis
 
@@ -35,10 +35,10 @@ Entfernt: die drei unbenutzten PlatformIO-Vorlagentexte `include/README`, `lib/R
 
 ## Verifikation
 
-- **13 Host-Testgruppen / 11 639 Prüfungen bestanden.** Fachfunktionen, Zustände, kodierter Austausch zwischen Controller und Kassendienst, Paketverluste, verspätete Antworten, Fehler-/Grenzfälle und Parser werden ausgeführt.
-- **Vier Firmware-Builds erfolgreich**, jeweils UF2 erzeugt. Maximal rund 29,2 % statisches RAM auf RP2040, Flash deutlich unter dem Boardlimit.
+- **17 Host-Testgruppen / 11 741 Prüfungen bestanden (20.11.2026).** Zusätzlich zu Fachfunktionen, Zuständen, kodiertem Austausch, Paketverlusten und Parser werden der isolierte Kassendienst mit Speicher-Mock sowie die Kennzeicheneingabe mit Stub geprüft.
+- **Vier Firmware-Builds erfolgreich (20.11.2026)**, jeweils UF2 erzeugt, keine Compilerfehler oder -warnungen. Maximal rund 29,2 % statisches RAM auf RP2040, Flash deutlich unter dem Boardlimit. Die Buildkonfiguration und die Hardwaretreiber wurden beibehalten.
 - Hardware-/WiFi-APIs wurden durch den echten Cross-Compiler geprüft. Test-/Buildskripte syntaxgeprüft, Änderungen und Dokumentationsverweise geprüft.
-- **Keine Hardwaretests bestanden behauptet:** Die Boards waren laut Nutzer nicht angeschlossen. Die manuelle Checkliste und ein unverfälschtes leeres Testprotokoll liegen bereit.
+- **Keine neuen Hardwaretests bestanden behauptet:** Am 20.11.2026 wurden keine seriellen Ports erkannt und keine Boards geflasht. Die manuelle Checkliste und das noch offene Testprotokoll liegen bereit.
 
 Details, Versionen und Grenzen der Messungen: [TESTERGEBNISSE.md](TESTERGEBNISSE.md).
 
